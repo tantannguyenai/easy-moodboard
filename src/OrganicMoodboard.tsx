@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import html2canvas from 'html2canvas';
-import { Download, X, Plus, Type, Settings, Scaling, CaseUpper, LayoutGrid, Sparkles, RefreshCw, Image as ImageIcon, ChevronLeft, ChevronRight, Copy, Loader2 } from 'lucide-react';
+import { Download, X, Plus, Type, Settings, Scaling, CaseUpper, LayoutGrid, Sparkles, RefreshCw, Image as ImageIcon, ChevronLeft, ChevronRight, Copy, Minus, Square, Play } from 'lucide-react';
 
 // --- Constants ---
 const QUOTES = [
@@ -18,6 +18,12 @@ const FONTS = [
   { name: "Tech Mono", family: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
   { name: "Clean Rounded", family: "'Arial Rounded MT Bold', 'Helvetica Rounded', Arial, sans-serif" },
   { name: "Classic Print", family: "'Courier New', Courier, monospace" },
+];
+
+const PRESET_GRADIENTS = [
+  "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)", 
+  "linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%)", 
+  "linear-gradient(to top, #cfd9df 0%, #e2ebf0 100%)", 
 ];
 
 // --- Types ---
@@ -51,9 +57,7 @@ const DockButton = ({ onClick, icon: Icon, label, active = false }: any) => (
 
 // --- ANIMATED MESH GRADIENT ---
 const MeshGradient = ({ palette }: { palette: string[] }) => {
-  // Safety: Ensure palette has at least 3 colors
   const safePalette = palette.length >= 3 ? palette : ['#F3F4F6', '#E5E7EB', '#D1D5DB'];
-
   return (
     <div className="absolute inset-0 overflow-hidden z-0 rounded-[inherit] opacity-15 pointer-events-none">
       <motion.div 
@@ -118,13 +122,18 @@ const OrganicMoodboard = () => {
   // --- State ---
   const [items, setItems] = useState<BoardItem[]>([]);
   const [globalZIndex, setGlobalZIndex] = useState(10);
-  const [layoutMode, setLayoutMode] = useState<'organic' | 'grid'>('organic');
+  // Added 'animate' to layout mode
+  const [layoutMode, setLayoutMode] = useState<'organic' | 'grid' | 'animate'>('organic');
+  const [activeIndex, setActiveIndex] = useState(0); // For Carousel
   
   // Style State
   const [dashboardRadius, setDashboardRadius] = useState(32);
   const [imageRadius, setImageRadius] = useState(12); 
   const [background, setBackground] = useState('#FFFFFF');
   const [bgMode, setBgMode] = useState<'solid' | 'gradient'>('gradient');
+  
+  const [showBorders, setShowBorders] = useState(true); 
+  const [quoteSize, setQuoteSize] = useState(20); 
   
   const [smartGradient, setSmartGradient] = useState(''); 
   const [currentFontIndex, setCurrentFontIndex] = useState(0);
@@ -140,18 +149,27 @@ const OrganicMoodboard = () => {
   const [title, setTitle] = useState("");
   const [aboutText, setAboutText] = useState("");
   const [tags, setTags] = useState(['', '', '', '']); 
-  // Safe initial palette
-  const [palette, setPalette] = useState(['#F3F4F6', '#E5E7EB', '#D1D5DB', '#9CA3AF', '#4B5563', '#1F2937']);
+  const [palette, setPalette] = useState(['#F3F4F6', '#F3F4F6', '#F3F4F6', '#F3F4F6', '#F3F4F6', '#F3F4F6']);
   const [author, setAuthor] = useState("");
 
   const exportWrapperRef = useRef<HTMLDivElement>(null); 
   const containerRef = useRef<HTMLDivElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // --- ANIMATION LOOP ---
+  useEffect(() => {
+    let interval: any;
+    if (layoutMode === 'animate' && items.length > 0) {
+        interval = setInterval(() => {
+            setActiveIndex((prev) => (prev + 1) % items.length);
+        }, 3000); // Cycle every 3 seconds
+    }
+    return () => clearInterval(interval);
+  }, [layoutMode, items.length]);
+
   // --- Helpers ---
   const imageItems = items.filter(i => i.type === 'image');
-  
-  // --- PALETTE EXTRACTOR ---
+
   const updatePaletteFromAllImages = (newImageUrls: string[] = []) => {
     const currentUrls = items.filter(i => i.type === 'image').map(i => i.content);
     const allUrls = [...currentUrls, ...newImageUrls];
@@ -180,8 +198,8 @@ const OrganicMoodboard = () => {
                 if(collectedColors.length >= 6) break;
                 const pt = samplePoints[i % samplePoints.length];
                 const p = ctx.getImageData(pt[0], pt[1], 1, 1).data;
-                if(p[0] > 250 && p[1] > 250 && p[2] > 250) continue; 
-                if(p[0] < 10 && p[1] < 10 && p[2] < 10) continue; 
+                if(p[0] > 245 && p[1] > 245 && p[2] > 245) continue; 
+                if(p[0] < 15 && p[1] < 15 && p[2] < 15) continue; 
                 collectedColors.push(`rgb(${p[0]}, ${p[1]}, ${p[2]})`);
             }
             
@@ -197,7 +215,6 @@ const OrganicMoodboard = () => {
     });
   };
 
-  // --- MANUAL COLOR UPDATE ---
   const updatePaletteColor = (index: number, newColor: string) => {
       const newPalette = [...palette];
       newPalette[index] = newColor;
@@ -219,7 +236,9 @@ const OrganicMoodboard = () => {
         x: safeX(baseX + jitterX), 
         y: safeY(baseY + jitterY), 
         rotation: (Math.random() * 12) - 6,
-        heightPercent: undefined 
+        heightPercent: undefined,
+        scale: 1,
+        opacity: 1
     };
   };
 
@@ -227,12 +246,12 @@ const OrganicMoodboard = () => {
     const cols = 5; 
     const rows = Math.ceil(totalCount / cols);
     const gap = 3; 
-    
     const cellWidth = (90 - (gap * (cols - 1))) / cols; 
     const cellHeight = 90 / Math.max(rows, 3); 
     const col = index % cols;
     const row = Math.floor(index / cols);
     const gridTotalWidth = (cols * cellWidth) + ((cols - 1) * gap);
+    const gridTotalHeight = (rows * cellHeight) + ((rows - 1) * gap);
     const startX = (100 - gridTotalWidth) / 2;
     const startY = 10; 
 
@@ -241,8 +260,31 @@ const OrganicMoodboard = () => {
       y: startY + (row * (cellHeight + gap)),
       rotation: 0, 
       widthPercent: cellWidth,
-      heightPercent: cellHeight
+      heightPercent: cellHeight,
+      scale: 1,
+      opacity: 1
     };
+  };
+
+  // --- NEW: ANIMATE / CAROUSEL LOGIC ---
+  const getAnimatePos = (index: number, activeIdx: number, total: number) => {
+      // Circular distance
+      const diff = (index - activeIdx + total) % total;
+      
+      // 0 = Active (Center)
+      if (diff === 0) {
+          return { x: 35, y: 20, rotation: 0, scale: 1.2, zIndex: 100, opacity: 1 };
+      }
+      // 1 or last = Next/Prev (Sides)
+      if (diff === 1 || diff === -total + 1) {
+           return { x: 60, y: 25, rotation: 5, scale: 0.9, zIndex: 50, opacity: 0.8 };
+      }
+      if (diff === total - 1 || diff === -1) {
+           return { x: 10, y: 25, rotation: -5, scale: 0.9, zIndex: 50, opacity: 0.8 };
+      }
+      
+      // Others hidden
+      return { x: 35, y: 20, rotation: 0, scale: 0.5, zIndex: 0, opacity: 0 };
   };
 
   const getSmartPos = (index: number, totalCount: number, mode = layoutMode) => {
@@ -254,9 +296,7 @@ const OrganicMoodboard = () => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    
     setIsLoading(true);
-
     const filesToProcess = Array.from(files).slice(0, 10); 
     const newItems: BoardItem[] = [];
     const newUrls: string[] = [];
@@ -275,7 +315,6 @@ const OrganicMoodboard = () => {
                 const gridData = getSmartPos(items.length + i, predictedTotal, layoutMode);
                 const pixelWidth = (gridData.widthPercent / 100) * containerWidth;
                 const pixelHeight = gridData.heightPercent ? (gridData.heightPercent / 100) * containerHeight : undefined;
-
                 newItems.push({
                     id: Math.random().toString(36).substr(2, 9),
                     type: 'image',
@@ -315,7 +354,6 @@ const OrganicMoodboard = () => {
     const containerHeight = containerRef.current?.clientHeight || 800;
     const pixelWidth = (gridData.widthPercent / 100) * containerWidth;
     const pixelHeight = gridData.heightPercent ? (gridData.heightPercent / 100) * containerHeight : undefined;
-
     const randomQuote = QUOTES[Math.floor(Math.random() * QUOTES.length)];
 
     const newItem: BoardItem = {
@@ -335,7 +373,6 @@ const OrganicMoodboard = () => {
     setGlobalZIndex(prev => prev + 1);
     const updatedItems = [...items, newItem];
     setItems(updatedItems);
-
     if (layoutMode === 'grid') reLayoutGrid(updatedItems);
   };
 
@@ -343,7 +380,6 @@ const OrganicMoodboard = () => {
       const total = currentItems.length;
       const containerWidth = containerRef.current?.clientWidth || 1200;
       const containerHeight = containerRef.current?.clientHeight || 800;
-
       setItems(currentItems.map((item, index) => {
           const pos = getGridPos(index, total);
           return {
@@ -357,10 +393,15 @@ const OrganicMoodboard = () => {
       }));
   };
 
-  const toggleLayoutMode = (mode: 'organic' | 'grid') => {
+  // --- Updated Toggle Layout ---
+  const toggleLayoutMode = (mode: 'organic' | 'grid' | 'animate') => {
     setLayoutMode(mode);
+    // If entering animation, reset index
+    if (mode === 'animate') setActiveIndex(0);
+    
     setItems(prev => {
-        const shuffledItems = [...prev].sort(() => Math.random() - 0.5);
+        // Shuffle first if organic
+        const shuffledItems = mode === 'organic' ? [...prev].sort(() => Math.random() - 0.5) : prev;
         const total = shuffledItems.length;
         const containerWidth = containerRef.current?.clientWidth || 1200;
         const containerHeight = containerRef.current?.clientHeight || 800;
@@ -368,24 +409,14 @@ const OrganicMoodboard = () => {
         return shuffledItems.map((item, index) => {
             if (mode === 'grid') {
                 const pos = getGridPos(index, total);
-                return { 
-                    ...item, 
-                    x: pos.x, 
-                    y: pos.y, 
-                    rotation: 0, 
-                    width: (pos.widthPercent / 100) * containerWidth,
-                    height: (pos.heightPercent! / 100) * containerHeight
-                };
-            } else {
+                return { ...item, ...pos, width: (pos.widthPercent / 100) * containerWidth, height: (pos.heightPercent! / 100) * containerHeight };
+            } else if (mode === 'organic') {
                 const pos = getOrganicPos(index);
-                return { 
-                    ...item, 
-                    x: pos.x, 
-                    y: pos.y, 
-                    rotation: pos.rotation,
-                    width: item.manualWidth || 220,
-                    height: undefined 
-                };
+                return { ...item, ...pos, width: item.manualWidth || 220, height: undefined };
+            } else {
+                 // ANIMATE MODE: Positions calculated in render loop via getAnimatePos
+                 // Here we just keep data stable
+                 return item;
             }
         });
     });
@@ -409,18 +440,17 @@ const OrganicMoodboard = () => {
     if (layoutMode === 'grid') reLayoutGrid(updated); 
   };
 
-  const handleResizeStart = (e: React.PointerEvent, id: string, initialWidth: number) => {
+  const handleResizeStart = (e: React.PointerEvent, id: string, initialWidth: number, aspectRatio?: number) => {
     e.stopPropagation();
     e.preventDefault();
     setResizingId(id);
-
     const startX = e.clientX;
     const onPointerMove = (moveEvent: PointerEvent) => {
         const deltaX = moveEvent.clientX - startX;
         const newWidth = Math.max(100, initialWidth + deltaX);
         setItems(prev => prev.map(item => {
             if (item.id === id) {
-                const newHeight = item.type === 'image' && item.aspectRatio ? newWidth / item.aspectRatio : item.height;
+                const newHeight = item.type === 'image' && aspectRatio ? newWidth * aspectRatio : item.height;
                 return { ...item, width: newWidth, height: newHeight, manualWidth: newWidth };
             }
             return item;
@@ -482,13 +512,7 @@ const OrganicMoodboard = () => {
                     </motion.div>
                 )}
                 {bgMode === 'gradient' && isExporting && (
-                    <div className="absolute inset-0 z-0 opacity-30" 
-                         style={{ 
-                            background: `radial-gradient(circle at 20% 20%, ${palette[0]} 0%, transparent 50%),
-                                         radial-gradient(circle at 80% 80%, ${palette[1]} 0%, transparent 50%),
-                                         radial-gradient(circle at 50% 50%, ${palette[2]} 0%, transparent 50%)` 
-                         }} 
-                    />
+                    <div className="absolute inset-0 z-0 opacity-30" style={{ background: `radial-gradient(circle at 20% 20%, ${palette[0]} 0%, transparent 50%), radial-gradient(circle at 80% 80%, ${palette[1]} 0%, transparent 50%), radial-gradient(circle at 50% 50%, ${palette[2]} 0%, transparent 50%)` }} />
                 )}
                 {bgMode === 'solid' && background !== '#FFFFFF' && (
                      <motion.div key="solid" initial={{ opacity: 0 }} animate={{ opacity: 0.3 }} exit={{ opacity: 0 }} className="absolute inset-0 z-0" style={{ backgroundColor: background }} />
@@ -588,31 +612,51 @@ const OrganicMoodboard = () => {
                 )}
 
                 <AnimatePresence>
-                    {items.map((item) => (
+                    {items.map((item, index) => {
+                        // DYNAMIC POSITIONING
+                        let pos: any = {};
+                        if (layoutMode === 'animate') {
+                             pos = getAnimatePos(index, activeIndex, items.length);
+                        } else {
+                            // Organic or Grid is handled by state, but animate prop needs values
+                            pos = { x: item.x, y: item.y, rotation: item.rotation, zIndex: item.zIndex, opacity: 1, scale: 1 };
+                        }
+
+                        return (
                         <motion.div
                             key={item.id}
-                            layout={resizingId !== item.id} 
+                            layout={resizingId !== item.id && layoutMode !== 'animate'} 
                             initial={{ opacity: 0, scale: 0.8 }}
                             animate={{ 
-                                opacity: 1, 
-                                scale: 1, 
+                                opacity: pos.opacity, 
+                                scale: pos.scale, 
                                 x: 0, 
                                 y: 0, 
-                                rotate: item.rotation, 
-                                zIndex: item.zIndex,
+                                rotate: pos.rotation, 
+                                zIndex: pos.zIndex,
                                 width: item.width,
-                                height: item.height || 'auto'
+                                height: item.height ? item.height : 'auto'
                             }}
                             transition={{ type: "spring", stiffness: 60, damping: 20, mass: 1 }}
                             
-                            drag={!isExporting} 
+                            // Disable drag in animate mode
+                            drag={!isExporting && layoutMode !== 'animate'} 
                             dragConstraints={containerRef}
                             dragElastic={0.1} 
                             dragMomentum={false}
                             onDragStart={() => bringToFront(item.id)}
                             onPointerDown={() => bringToFront(item.id)}
                             
-                            whileHover={!isExporting ? { scale: 1.02, cursor: 'grab', zIndex: 999 } : {}}
+                            style={{ 
+                                position: 'absolute',
+                                // In Animate mode, we override left/top
+                                left: layoutMode === 'animate' ? `${pos.x}%` : `${item.x}%`, 
+                                top: layoutMode === 'animate' ? `${pos.y}%` : `${item.y}%`, 
+                                width: `${item.width}px`,
+                                transform: layoutMode === 'animate' ? 'translate(-50%, -50%)' : 'none'
+                            }}
+
+                            whileHover={(!isExporting && layoutMode !== 'animate') ? { scale: 1.015, cursor: 'grab', zIndex: 999 } : {}}
                             whileDrag={{ 
                                 scale: 1.15, 
                                 rotate: 5, 
@@ -622,15 +666,9 @@ const OrganicMoodboard = () => {
                             }}
                             
                             className="absolute group"
-                            style={{ 
-                                left: `${item.x}%`, 
-                                top: `${item.y}%`, 
-                                width: `${item.width}px`,
-                                height: item.height ? `${item.height}px` : 'auto'
-                            }}
                         >
                             <div className="relative w-full h-full">
-                                {!isExporting && (
+                                {!isExporting && layoutMode !== 'animate' && (
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
                                         className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center bg-white border border-gray-200 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-sm hover:scale-110"
@@ -641,7 +679,7 @@ const OrganicMoodboard = () => {
 
                                 {item.type === 'image' ? (
                                     <div 
-                                        className="bg-white p-[8px] transition-all w-full h-full"
+                                        className={`transition-all w-full h-full ${showBorders ? 'bg-white p-[8px]' : ''}`} 
                                         style={{ 
                                             borderRadius: `${imageRadius}px`,
                                             boxShadow: '0 12px 24px -8px rgba(0,0,0,0.25)' 
@@ -651,12 +689,12 @@ const OrganicMoodboard = () => {
                                             src={item.content} 
                                             className="pointer-events-none select-none object-cover w-full h-full block"
                                             style={{ 
-                                                borderRadius: `${Math.max(0, imageRadius - 6)}px`,
+                                                borderRadius: showBorders ? `${Math.max(0, imageRadius - 6)}px` : `${imageRadius}px`,
                                                 objectFit: 'cover' 
                                             }} 
                                             crossOrigin="anonymous"
                                         />
-                                        {!isExporting && (
+                                        {!isExporting && layoutMode !== 'animate' && (
                                             <div 
                                                 onPointerDown={(e) => handleResizeStart(e, item.id, item.width, item.aspectRatio)}
                                                 className="absolute bottom-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-ew-resize flex items-center justify-center transition-opacity z-50 hover:bg-white"
@@ -674,134 +712,91 @@ const OrganicMoodboard = () => {
                                         {isExporting ? (
                                             <>
                                                 <div className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-3">{item.author}</div>
-                                                <div className="text-xl font-medium text-gray-800 leading-snug">{item.content}</div>
+                                                <div className="font-medium text-gray-800 leading-snug" style={{ fontSize: `${quoteSize}px` }}>{item.content}</div>
                                             </>
                                         ) : (
                                             <>
                                                 <div contentEditable suppressContentEditableWarning className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-3 outline-none">{item.author}</div>
-                                                <div contentEditable suppressContentEditableWarning className="text-xl font-medium text-gray-800 leading-snug outline-none">{item.content}</div>
+                                                <div 
+                                                    contentEditable 
+                                                    suppressContentEditableWarning 
+                                                    className="font-medium text-gray-800 leading-snug outline-none"
+                                                    style={{ fontSize: `${quoteSize}px` }}
+                                                >
+                                                    {item.content}
+                                                </div>
                                             </>
                                         )}
                                     </div>
                                 )}
                             </div>
                         </motion.div>
-                    ))}
+                    );
+                })}
                 </AnimatePresence>
 
                 {/* --- DOCK --- */}
                 {!isExporting && (
                     <div id="dock-controls" className="absolute bottom-8 right-8 z-[9999] flex flex-col items-end gap-4">
-                        
-                        {/* New High Contrast Style Menu */}
-                        <AnimatePresence>
-                            {showSettings && (
-                                <motion.div 
-                                    initial={{ opacity: 0, x: 20, scale: 0.9 }}
-                                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                                    exit={{ opacity: 0, x: 20, scale: 0.9 }}
-                                    className="absolute bottom-20 right-0 w-72 p-6 rounded-3xl bg-neutral-900/95 backdrop-blur-md border border-white/10 shadow-2xl"
-                                >
-                                    <div className="space-y-5">
-                                        {/* Sliders */}
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Dashboard Radius</span>
-                                                <span className="text-white font-mono text-xs">{dashboardRadius}px</span>
-                                            </div>
-                                            <input 
-                                                type="range" min="0" max="60" 
-                                                value={dashboardRadius} 
-                                                onChange={(e) => setDashboardRadius(Number(e.target.value))} 
-                                                className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Image Radius</span>
-                                                <span className="text-white font-mono text-xs">{imageRadius}px</span>
-                                            </div>
-                                            <input 
-                                                type="range" min="0" max="60" 
-                                                value={imageRadius} 
-                                                onChange={(e) => setImageRadius(Number(e.target.value))} 
-                                                className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors"
-                                            />
-                                        </div>
-
-                                        <div className="h-px bg-white/10 w-full" />
-
-                                        {/* Background Toggles */}
-                                        <div className="space-y-3">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Background</span>
-                                                <div className="flex gap-2">
-                                                    <button 
-                                                        onClick={() => setBgMode('solid')} 
-                                                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-white text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}
-                                                    >
-                                                        Solid
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => setBgMode('gradient')} 
-                                                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-white text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}
-                                                    >
-                                                        Gradient
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            
-                                            {/* Manual Gradient Controls */}
-                                            {bgMode === 'gradient' && (
-                                                <div className="flex justify-between gap-2 pt-1">
-                                                     {[0, 1, 2].map((i) => (
-                                                        <div key={i} className="w-8 h-8 rounded-full border border-white/20 relative overflow-hidden shadow-sm cursor-pointer hover:scale-110 transition-transform">
-                                                            <input 
-                                                                type="color" 
-                                                                value={palette[i] || '#ffffff'} 
-                                                                onChange={(e) => updatePaletteColor(i, e.target.value)}
-                                                                className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0"
-                                                            />
-                                                            <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
-                                                        </div>
-                                                    ))}
-                                                    <button 
-                                                        onClick={() => setPalette(prev => [...prev].sort(() => Math.random() - 0.5))} 
-                                                        className="ml-auto text-[10px] text-white/70 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 transition-colors"
-                                                    >
-                                                        <RefreshCw size={10}/> Shuffle
-                                                    </button>
-                                                </div>
-                                            )}
-                                            
-                                            {/* Solid Picker */}
-                                            {bgMode === 'solid' && (
-                                                <div className="flex gap-2 overflow-x-auto pt-1 pb-1">
-                                                    {['#FFFFFF', '#F3F4F6', '#E5E7EB', '#000000', '#1a1a1a'].map(c => (
-                                                        <button key={c} onClick={() => setBackground(c)} className="w-6 h-6 rounded-full border border-white/20 flex-shrink-0" style={{ backgroundColor: c }} />
-                                                    ))}
-                                                    <div className="w-6 h-6 rounded-full border border-white/20 relative overflow-hidden">
-                                                        <input type="color" value={background} onChange={(e) => setBackground(e.target.value)} className="absolute -top-2 -left-2 w-10 h-10 opacity-0 cursor-pointer" />
-                                                        <div className="w-full h-full" style={{ backgroundColor: background }} />
+                        {showSettings && (
+                            <div className="flex flex-col gap-4 p-5 rounded-3xl bg-neutral-900/95 backdrop-blur-md border border-white/10 shadow-2xl animate-in slide-in-from-bottom-2 fade-in w-80">
+                                <div className="space-y-5">
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Dashboard Radius</span><span className="text-white font-mono text-xs">{dashboardRadius}px</span></div>
+                                        <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors"/>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Item Radius</span><span className="text-white font-mono text-xs">{imageRadius}px</span></div>
+                                        <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors"/>
+                                    </div>
+                                    <div className="h-px bg-white/10 w-full" />
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Background</span><div className="flex gap-2"><button onClick={() => setBgMode('solid')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-white text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}>Solid</button><button onClick={() => setBgMode('gradient')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-white text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}>Gradient</button></div></div>
+                                        {bgMode === 'gradient' && (
+                                            <div className="flex justify-between gap-2 pt-1">
+                                                 {[0, 1, 2].map((i) => (
+                                                    <div key={i} className="w-8 h-8 rounded-full border border-white/20 relative overflow-hidden shadow-sm cursor-pointer hover:scale-110 transition-transform">
+                                                        <input type="color" value={palette[i] || '#ffffff'} onChange={(e) => updatePaletteColor(i, e.target.value)} className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0"/>
+                                                        <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
                                                     </div>
-                                                </div>
-                                            )}
+                                                ))}
+                                                <button onClick={() => setPalette(prev => [...prev].sort(() => Math.random() - 0.5))} className="ml-auto text-[10px] text-white/70 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 transition-colors"><RefreshCw size={10}/> Shuffle</button>
+                                            </div>
+                                        )}
+                                        {bgMode === 'solid' && (
+                                            <div className="flex gap-2 overflow-x-auto pt-1 pb-1">
+                                                {['#FFFFFF', '#F3F4F6', '#000000', '#1a1a1a'].map(c => (<button key={c} onClick={() => setBackground(c)} className="w-6 h-6 rounded-full border border-white/20 flex-shrink-0" style={{ backgroundColor: c }} />))}
+                                                <div className="w-6 h-6 rounded-full border border-white/20 relative overflow-hidden"><input type="color" value={background} onChange={(e) => setBackground(e.target.value)} className="absolute -top-2 -left-2 w-10 h-10 opacity-0 cursor-pointer" /><div className="w-full h-full" style={{ backgroundColor: background }} /></div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="h-px bg-white/10 w-full" />
+                                    <div className="space-y-3">
+                                        <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Elements</h4>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-center"><span className="text-xs font-medium text-neutral-300">Text Size</span><span className="text-[10px] font-mono text-neutral-500">{quoteSize}px</span></div>
+                                            <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors"/>
+                                        </div>
+                                        <div className="flex items-center justify-between pt-1">
+                                            <span className="text-xs font-medium text-neutral-300">Image Frames</span>
+                                            <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-white' : 'bg-white/10'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-black' : 'bg-white'}`} /></button>
                                         </div>
                                     </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                                </div>
+                            </div>
+                        )}
 
-                        {/* Dock */}
-                        <div className="flex items-center gap-3 p-3 rounded-3xl bg-black/80 backdrop-blur-xl shadow-2xl border border-white/10">
+                        <div className="flex items-center gap-2 p-2 rounded-3xl bg-black/80 backdrop-blur-xl shadow-2xl border border-white/10">
                             <div className="relative group"><DockButton onClick={() => fileInputRef.current?.click()} icon={Plus} label="Add" /><input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload}/></div>
                             <DockButton onClick={addQuote} icon={Type} label="Text" />
                             <DockButton onClick={cycleFonts} icon={CaseUpper} label="Font" />
-                            <div className="w-px h-10 bg-white/10 mx-1" />
+                            <div className="w-px h-8 bg-white/10 mx-1" />
                             <DockButton onClick={() => setShowSettings(!showSettings)} icon={Settings} label="Style" active={showSettings} />
+                            {/* ADDED ANIMATE BUTTON BACK */}
                             <DockButton onClick={() => toggleLayoutMode('organic')} icon={Sparkles} label="Free" active={layoutMode === 'organic'} />
                             <DockButton onClick={() => toggleLayoutMode('grid')} icon={LayoutGrid} label="Grid" active={layoutMode === 'grid'} />
-                            <div className="w-px h-10 bg-white/10 mx-1" />
+                            <DockButton onClick={() => toggleLayoutMode('animate')} icon={Play} label="Show" active={layoutMode === 'animate'} />
+                            <div className="w-px h-8 bg-white/10 mx-1" />
                             <DockButton onClick={handleExport} icon={Download} label="Save" />
                         </div>
                     </div>
