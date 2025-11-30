@@ -122,9 +122,8 @@ const OrganicMoodboard = () => {
   // --- State ---
   const [items, setItems] = useState<BoardItem[]>([]);
   const [globalZIndex, setGlobalZIndex] = useState(10);
-  // Added 'animate' to layout mode
   const [layoutMode, setLayoutMode] = useState<'organic' | 'grid' | 'animate'>('organic');
-  const [activeIndex, setActiveIndex] = useState(0); // For Carousel
+  const [activeIndex, setActiveIndex] = useState(0); 
   
   // Style State
   const [dashboardRadius, setDashboardRadius] = useState(32);
@@ -162,14 +161,44 @@ const OrganicMoodboard = () => {
     if (layoutMode === 'animate' && items.length > 0) {
         interval = setInterval(() => {
             setActiveIndex((prev) => (prev + 1) % items.length);
-        }, 3000); // Cycle every 3 seconds
+        }, 3000); 
     }
     return () => clearInterval(interval);
   }, [layoutMode, items.length]);
 
-  // --- Helpers ---
-  const imageItems = items.filter(i => i.type === 'image');
+  // --- SHOW MODE VARIANTS ---
+  const showVariants = {
+    enter: { 
+        rotateX: -60, 
+        y: 80, 
+        opacity: 0, 
+        scale: 0.9 
+    },
+    center: { 
+        rotateX: 0, 
+        y: 0, 
+        opacity: 1, 
+        scale: 1,
+        zIndex: 1,
+        transition: { 
+            duration: 0.8, 
+            ease: "easeOut" 
+        }
+    },
+    exit: { 
+        rotateX: 60, 
+        y: -80, 
+        opacity: 0, 
+        scale: 0.9, 
+        zIndex: 0,
+        transition: { 
+            duration: 0.6, 
+            ease: "easeIn" 
+        }
+    }
+  };
 
+  // --- Helpers ---
   const updatePaletteFromAllImages = (newImageUrls: string[] = []) => {
     const currentUrls = items.filter(i => i.type === 'image').map(i => i.content);
     const allUrls = [...currentUrls, ...newImageUrls];
@@ -264,27 +293,6 @@ const OrganicMoodboard = () => {
       scale: 1,
       opacity: 1
     };
-  };
-
-  // --- NEW: ANIMATE / CAROUSEL LOGIC ---
-  const getAnimatePos = (index: number, activeIdx: number, total: number) => {
-      // Circular distance
-      const diff = (index - activeIdx + total) % total;
-      
-      // 0 = Active (Center)
-      if (diff === 0) {
-          return { x: 35, y: 20, rotation: 0, scale: 1.2, zIndex: 100, opacity: 1 };
-      }
-      // 1 or last = Next/Prev (Sides)
-      if (diff === 1 || diff === -total + 1) {
-           return { x: 60, y: 25, rotation: 5, scale: 0.9, zIndex: 50, opacity: 0.8 };
-      }
-      if (diff === total - 1 || diff === -1) {
-           return { x: 10, y: 25, rotation: -5, scale: 0.9, zIndex: 50, opacity: 0.8 };
-      }
-      
-      // Others hidden
-      return { x: 35, y: 20, rotation: 0, scale: 0.5, zIndex: 0, opacity: 0 };
   };
 
   const getSmartPos = (index: number, totalCount: number, mode = layoutMode) => {
@@ -393,15 +401,12 @@ const OrganicMoodboard = () => {
       }));
   };
 
-  // --- Updated Toggle Layout ---
   const toggleLayoutMode = (mode: 'organic' | 'grid' | 'animate') => {
     setLayoutMode(mode);
-    // If entering animation, reset index
     if (mode === 'animate') setActiveIndex(0);
     
     setItems(prev => {
-        // Shuffle first if organic
-        const shuffledItems = mode === 'organic' ? [...prev].sort(() => Math.random() - 0.5) : prev;
+        const shuffledItems = (mode === 'organic' || mode === 'grid') ? [...prev].sort(() => Math.random() - 0.5) : prev;
         const total = shuffledItems.length;
         const containerWidth = containerRef.current?.clientWidth || 1200;
         const containerHeight = containerRef.current?.clientHeight || 800;
@@ -414,8 +419,6 @@ const OrganicMoodboard = () => {
                 const pos = getOrganicPos(index);
                 return { ...item, ...pos, width: item.manualWidth || 220, height: undefined };
             } else {
-                 // ANIMATE MODE: Positions calculated in render loop via getAnimatePos
-                 // Here we just keep data stable
                  return item;
             }
         });
@@ -493,10 +496,8 @@ const OrganicMoodboard = () => {
     <div className="flex items-center justify-center w-full h-screen bg-[#E5E5EA] overflow-hidden font-sans text-[#1D1D1F]"
          style={{ fontFamily: FONTS[currentFontIndex].family }}>
       
-      {/* --- EXPORT WRAPPER --- */}
       <div ref={exportWrapperRef} className="p-12 w-full h-full flex items-center justify-center"> 
 
-        {/* --- THE MAIN DASHBOARD --- */}
         <div 
             className="relative w-full h-full max-w-[1800px] aspect-[16/10] shadow-2xl overflow-hidden flex flex-row transition-all duration-500"
             style={{ 
@@ -504,7 +505,6 @@ const OrganicMoodboard = () => {
                 borderRadius: `${dashboardRadius}px`
             }}
         >
-            {/* --- BACKGROUND LAYERS --- */}
             <AnimatePresence mode='popLayout'>
                 {bgMode === 'gradient' && !isExporting && (
                     <motion.div key="mesh" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-0">
@@ -519,12 +519,10 @@ const OrganicMoodboard = () => {
                 )}
             </AnimatePresence>
 
-            {/* --- LOADING OVERLAY --- */}
             <AnimatePresence>
                 {isLoading && <LoadingCards />}
             </AnimatePresence>
 
-            {/* --- SIDEBAR TOGGLE --- */}
             {!isExporting && (
                 <button 
                     id="sidebar-toggle"
@@ -535,7 +533,6 @@ const OrganicMoodboard = () => {
                 </button>
             )}
 
-            {/* --- 1. LEFT SIDEBAR --- */}
             <AnimatePresence initial={false}>
                 {isSidebarOpen && (
                     <motion.div 
@@ -602,8 +599,8 @@ const OrganicMoodboard = () => {
                 )}
             </AnimatePresence>
 
-            {/* --- 2. RIGHT CANVAS --- */}
-            <div ref={containerRef} className="flex-1 h-full relative overflow-hidden z-10">
+            {/* --- RIGHT CANVAS --- */}
+            <div ref={containerRef} className="flex-1 h-full relative overflow-hidden z-10" style={{ perspective: '1200px' }}>
                 {items.length === 0 && !isLoading && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center opacity-20 pointer-events-none">
                         <Plus size={80} strokeWidth={1} className="mb-4 text-black"/>
@@ -611,129 +608,173 @@ const OrganicMoodboard = () => {
                     </div>
                 )}
 
-                <AnimatePresence>
-                    {items.map((item, index) => {
-                        // DYNAMIC POSITIONING
-                        let pos: any = {};
-                        if (layoutMode === 'animate') {
-                             pos = getAnimatePos(index, activeIndex, items.length);
-                        } else {
-                            // Organic or Grid is handled by state, but animate prop needs values
-                            pos = { x: item.x, y: item.y, rotation: item.rotation, zIndex: item.zIndex, opacity: 1, scale: 1 };
-                        }
-
-                        return (
-                        <motion.div
-                            key={item.id}
-                            layout={resizingId !== item.id && layoutMode !== 'animate'} 
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ 
-                                opacity: pos.opacity, 
-                                scale: pos.scale, 
-                                x: 0, 
-                                y: 0, 
-                                rotate: pos.rotation, 
-                                zIndex: pos.zIndex,
-                                width: item.width,
-                                height: item.height ? item.height : 'auto'
-                            }}
-                            transition={{ type: "spring", stiffness: 60, damping: 20, mass: 1 }}
-                            
-                            // Disable drag in animate mode
-                            drag={!isExporting && layoutMode !== 'animate'} 
-                            dragConstraints={containerRef}
-                            dragElastic={0.1} 
-                            dragMomentum={false}
-                            onDragStart={() => bringToFront(item.id)}
-                            onPointerDown={() => bringToFront(item.id)}
-                            
-                            style={{ 
-                                position: 'absolute',
-                                // In Animate mode, we override left/top
-                                left: layoutMode === 'animate' ? `${pos.x}%` : `${item.x}%`, 
-                                top: layoutMode === 'animate' ? `${pos.y}%` : `${item.y}%`, 
-                                width: `${item.width}px`,
-                                transform: layoutMode === 'animate' ? 'translate(-50%, -50%)' : 'none'
-                            }}
-
-                            whileHover={(!isExporting && layoutMode !== 'animate') ? { scale: 1.015, cursor: 'grab', zIndex: 999 } : {}}
-                            whileDrag={{ 
-                                scale: 1.15, 
-                                rotate: 5, 
-                                boxShadow: "0 40px 80px -20px rgba(0, 0, 0, 0.5)",
-                                cursor: 'grabbing',
-                                zIndex: 9999 
-                            }}
-                            
-                            className="absolute group"
-                        >
-                            <div className="relative w-full h-full">
-                                {!isExporting && layoutMode !== 'animate' && (
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
-                                        className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center bg-white border border-gray-200 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-sm hover:scale-110"
+                {/* --- SHOW MODE VS EDIT MODES --- */}
+                {layoutMode === 'animate' && items.length > 0 ? (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <AnimatePresence mode="popLayout">
+                            {(() => {
+                                const item = items[activeIndex];
+                                if (!item) return null;
+                                return (
+                                    <motion.div
+                                        key={item.id}
+                                        variants={showVariants}
+                                        initial="enter"
+                                        animate="center"
+                                        exit="exit"
+                                        className="absolute w-[400px] max-w-[80%] aspect-[3/4] flex flex-col items-center justify-center"
+                                        style={{ transformStyle: 'preserve-3d' }}
                                     >
-                                        <X size={12} strokeWidth={3} />
-                                    </button>
-                                )}
-
-                                {item.type === 'image' ? (
-                                    <div 
-                                        className={`transition-all w-full h-full ${showBorders ? 'bg-white p-[8px]' : ''}`} 
-                                        style={{ 
-                                            borderRadius: `${imageRadius}px`,
-                                            boxShadow: '0 12px 24px -8px rgba(0,0,0,0.25)' 
-                                        }}
-                                    >
-                                        <img 
-                                            src={item.content} 
-                                            className="pointer-events-none select-none object-cover w-full h-full block"
-                                            style={{ 
-                                                borderRadius: showBorders ? `${Math.max(0, imageRadius - 6)}px` : `${imageRadius}px`,
-                                                objectFit: 'cover' 
-                                            }} 
-                                            crossOrigin="anonymous"
-                                        />
-                                        {!isExporting && layoutMode !== 'animate' && (
-                                            <div 
-                                                onPointerDown={(e) => handleResizeStart(e, item.id, item.width, item.aspectRatio)}
-                                                className="absolute bottom-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-ew-resize flex items-center justify-center transition-opacity z-50 hover:bg-white"
-                                            >
-                                                <Scaling size={14} className="text-gray-600" />
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className={`border border-white/60 p-6 shadow-xl w-full h-full ${isExporting ? 'bg-white/95' : 'bg-white/80 backdrop-blur-xl'}`}
-                                        style={{ 
-                                            borderRadius: `${imageRadius}px`, 
-                                            boxShadow: '0 12px 24px -8px rgba(0,0,0,0.15)'
-                                        }}>
-                                        {isExporting ? (
-                                            <>
-                                                <div className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-3">{item.author}</div>
-                                                <div className="font-medium text-gray-800 leading-snug" style={{ fontSize: `${quoteSize}px` }}>{item.content}</div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div contentEditable suppressContentEditableWarning className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-3 outline-none">{item.author}</div>
+                                        <div className="relative w-full h-full">
+                                            {item.type === 'image' ? (
                                                 <div 
-                                                    contentEditable 
-                                                    suppressContentEditableWarning 
-                                                    className="font-medium text-gray-800 leading-snug outline-none"
-                                                    style={{ fontSize: `${quoteSize}px` }}
+                                                    className={`transition-all w-full h-full ${showBorders ? 'bg-white p-[10px]' : ''}`} 
+                                                    style={{ 
+                                                        borderRadius: `${imageRadius}px`,
+                                                        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35)' 
+                                                    }}
                                                 >
-                                                    {item.content}
+                                                    <img 
+                                                        src={item.content} 
+                                                        className="pointer-events-none select-none object-cover w-full h-full block"
+                                                        style={{ 
+                                                            borderRadius: showBorders ? `${Math.max(0, imageRadius - 8)}px` : `${imageRadius}px`,
+                                                            objectFit: 'cover' 
+                                                        }} 
+                                                        crossOrigin="anonymous"
+                                                    />
                                                 </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </motion.div>
-                    );
-                })}
-                </AnimatePresence>
+                                            ) : (
+                                                <div className={`border border-white/60 p-8 shadow-2xl w-full h-full bg-white/80 backdrop-blur-xl flex flex-col justify-center`}
+                                                    style={{ 
+                                                        borderRadius: `${imageRadius}px`, 
+                                                    }}>
+                                                    <div className="text-[12px] font-bold tracking-widest text-gray-500 uppercase mb-4">{item.author}</div>
+                                                    <div 
+                                                        className="font-medium text-gray-800 leading-snug"
+                                                        style={{ fontSize: `${quoteSize}px` }}
+                                                    >
+                                                        {item.content}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                );
+                            })()}
+                        </AnimatePresence>
+                    </div>
+                ) : (
+                    <AnimatePresence>
+                        {items.map((item) => (
+                            <motion.div
+                                key={item.id}
+                                layout={resizingId !== item.id} 
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ 
+                                    opacity: 1, 
+                                    scale: 1, 
+                                    x: 0, 
+                                    y: 0, 
+                                    rotate: item.rotation, 
+                                    zIndex: item.zIndex,
+                                    width: item.width,
+                                    height: item.height ? item.height : 'auto'
+                                }}
+                                transition={{ type: "spring", stiffness: 60, damping: 20, mass: 1 }}
+                                
+                                drag={!isExporting} 
+                                dragConstraints={containerRef}
+                                dragElastic={0.1} 
+                                dragMomentum={false}
+                                onDragStart={() => bringToFront(item.id)}
+                                onPointerDown={() => bringToFront(item.id)}
+                                
+                                style={{ 
+                                    position: 'absolute',
+                                    left: `${item.x}%`, 
+                                    top: `${item.y}%`, 
+                                    width: `${item.width}px`
+                                }}
+
+                                whileHover={!isExporting ? { scale: 1.015, cursor: 'grab', zIndex: 999 } : {}}
+                                whileDrag={{ 
+                                    scale: 1.15, 
+                                    rotate: 5, 
+                                    boxShadow: "0 40px 80px -20px rgba(0, 0, 0, 0.5)",
+                                    cursor: 'grabbing',
+                                    zIndex: 9999 
+                                }}
+                                
+                                className="absolute group"
+                            >
+                                <div className="relative w-full h-full">
+                                    {!isExporting && (
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
+                                            className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center bg-white border border-gray-200 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-sm hover:scale-110"
+                                        >
+                                            <X size={12} strokeWidth={3} />
+                                        </button>
+                                    )}
+
+                                    {item.type === 'image' ? (
+                                        <div 
+                                            className={`transition-all w-full h-full ${showBorders ? 'bg-white p-[8px]' : ''}`} 
+                                            style={{ 
+                                                borderRadius: `${imageRadius}px`,
+                                                boxShadow: '0 12px 24px -8px rgba(0,0,0,0.25)' 
+                                            }}
+                                        >
+                                            <img 
+                                                src={item.content} 
+                                                className="pointer-events-none select-none object-cover w-full h-full block"
+                                                style={{ 
+                                                    borderRadius: showBorders ? `${Math.max(0, imageRadius - 6)}px` : `${imageRadius}px`,
+                                                    objectFit: 'cover' 
+                                                }} 
+                                                crossOrigin="anonymous"
+                                            />
+                                            {!isExporting && (
+                                                <div 
+                                                    onPointerDown={(e) => handleResizeStart(e, item.id, item.width, item.aspectRatio)}
+                                                    className="absolute bottom-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-ew-resize flex items-center justify-center transition-opacity z-50 hover:bg-white"
+                                                >
+                                                    <Scaling size={14} className="text-gray-600" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className={`border border-white/60 p-6 shadow-xl w-full h-full ${isExporting ? 'bg-white/95' : 'bg-white/80 backdrop-blur-xl'}`}
+                                            style={{ 
+                                                borderRadius: `${imageRadius}px`, 
+                                                boxShadow: '0 12px 24px -8px rgba(0,0,0,0.15)'
+                                            }}>
+                                            {isExporting ? (
+                                                <>
+                                                    <div className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-3">{item.author}</div>
+                                                    <div className="font-medium text-gray-800 leading-snug" style={{ fontSize: `${quoteSize}px` }}>{item.content}</div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div contentEditable suppressContentEditableWarning className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-3 outline-none">{item.author}</div>
+                                                    <div 
+                                                        contentEditable 
+                                                        suppressContentEditableWarning 
+                                                        className="font-medium text-gray-800 leading-snug outline-none"
+                                                        style={{ fontSize: `${quoteSize}px` }}
+                                                    >
+                                                        {item.content}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        ))}
+                    </AnimatePresence>
+                )}
 
                 {/* --- DOCK --- */}
                 {!isExporting && (
