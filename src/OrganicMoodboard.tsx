@@ -504,7 +504,7 @@ const OrganicMoodboard = () => {
     const [magicalItems, setMagicalItems] = useState<string[]>([]);
 
     // Sidebar
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
 
     // Content State
     const [title, setTitle] = useState("");
@@ -682,8 +682,13 @@ const OrganicMoodboard = () => {
         const newItems: BoardItem[] = [];
         const newUrls: string[] = [];
         const predictedTotal = items.length + filesToProcess.length;
-        const containerWidth = containerRef.current?.clientWidth || 1200;
-        const containerHeight = containerRef.current?.clientHeight || 800;
+        // Fallback to window dimensions if container is hidden (e.g. behind sidebar on mobile)
+        const containerWidth = (containerRef.current?.clientWidth || 0) > 0
+            ? containerRef.current!.clientWidth
+            : window.innerWidth;
+        const containerHeight = (containerRef.current?.clientHeight || 0) > 0
+            ? containerRef.current!.clientHeight
+            : window.innerHeight;
 
         const imagePromises = filesToProcess.map((file, i) => {
             return new Promise<void>((resolve) => {
@@ -829,8 +834,13 @@ const OrganicMoodboard = () => {
     const addQuote = () => {
         const predictedTotal = items.length + 1;
         const gridData = getSmartPos(items.length, predictedTotal, layoutMode);
-        const containerWidth = containerRef.current?.clientWidth || 1200;
-        const containerHeight = containerRef.current?.clientHeight || 800;
+        // Fallback to window dimensions
+        const containerWidth = (containerRef.current?.clientWidth || 0) > 0
+            ? containerRef.current!.clientWidth
+            : window.innerWidth;
+        const containerHeight = (containerRef.current?.clientHeight || 0) > 0
+            ? containerRef.current!.clientHeight
+            : window.innerHeight;
         const pixelWidth = (gridData.widthPercent / 100) * containerWidth;
         const pixelHeight = gridData.heightPercent ? (gridData.heightPercent / 100) * containerHeight : undefined;
         const randomQuote = QUOTES[Math.floor(Math.random() * QUOTES.length)];
@@ -857,8 +867,13 @@ const OrganicMoodboard = () => {
 
     const reLayoutGrid = (currentItems: BoardItem[]) => {
         const total = currentItems.length;
-        const containerWidth = containerRef.current?.clientWidth || 1200;
-        const containerHeight = containerRef.current?.clientHeight || 800;
+        // Fallback to window dimensions
+        const containerWidth = (containerRef.current?.clientWidth || 0) > 0
+            ? containerRef.current!.clientWidth
+            : window.innerWidth;
+        const containerHeight = (containerRef.current?.clientHeight || 0) > 0
+            ? containerRef.current!.clientHeight
+            : window.innerHeight;
         setItems(currentItems.map((item, index) => {
             const pos = getGridPos(index, total);
             return {
@@ -879,8 +894,13 @@ const OrganicMoodboard = () => {
         setItems(prev => {
             const shuffledItems = (mode === 'organic' || mode === 'grid') ? [...prev].sort(() => Math.random() - 0.5) : prev;
             const total = shuffledItems.length;
-            const containerWidth = containerRef.current?.clientWidth || 1200;
-            const containerHeight = containerRef.current?.clientHeight || 800;
+            // Fallback to window dimensions
+            const containerWidth = (containerRef.current?.clientWidth || 0) > 0
+                ? containerRef.current!.clientWidth
+                : window.innerWidth;
+            const containerHeight = (containerRef.current?.clientHeight || 0) > 0
+                ? containerRef.current!.clientHeight
+                : window.innerHeight;
 
             return shuffledItems.map((item, index) => {
                 if (mode === 'grid') {
@@ -970,6 +990,22 @@ const OrganicMoodboard = () => {
                 setIsExporting(false);
             }
         }, 500);
+    };
+
+    const handleTourStepChange = (step: number) => {
+        // Only automate sidebar on mobile
+        if (windowWidth >= 768) return;
+
+        if (step === 0) {
+            // Step 0: Welcome (Canvas) -> Close sidebar
+            setIsSidebarOpen(false);
+        } else if (step === 1) {
+            // Step 1: AI Description (Sidebar item) -> Open sidebar
+            setIsSidebarOpen(true);
+        } else if (step >= 2) {
+            // Step 2+: Dock items -> Close sidebar
+            setIsSidebarOpen(false);
+        }
     };
 
     return (
@@ -1324,7 +1360,7 @@ const OrganicMoodboard = () => {
                     )}
                 </div>
             </div>
-            <TourGuide />
+            <TourGuide onStepChange={handleTourStepChange} />
         </div >
     );
 };

@@ -36,7 +36,7 @@ const TOUR_STEPS: TourStep[] = [
     }
 ];
 
-export const TourGuide = () => {
+export const TourGuide = ({ onStepChange }: { onStepChange?: (step: number) => void }) => {
     const [currentStep, setCurrentStep] = useState(0);
     const [isVisible, setIsVisible] = useState(true);
     const [coords, setCoords] = useState<{ x: number, y: number, arrowOffset: number, placement: string }>({ x: 0, y: 0, arrowOffset: 0, placement: 'bottom' });
@@ -142,6 +142,9 @@ export const TourGuide = () => {
 
     useEffect(() => {
         if (!isVisible) return;
+
+        // Notify parent of step change
+        onStepChange?.(currentStep);
 
         // Small delay to ensure DOM is ready
         const timer = setTimeout(updatePosition, 100);
