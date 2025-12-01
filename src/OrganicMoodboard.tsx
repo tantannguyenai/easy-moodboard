@@ -4,8 +4,8 @@ import { motion, AnimatePresence, type Variants, usePresence } from 'framer-moti
 import html2canvas from 'html2canvas';
 import {
     Download, X, Plus, Type, Settings, Scaling, CaseUpper,
-    LayoutGrid, Sparkles, RefreshCw, ChevronLeft, ChevronRight,
-    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Activity, Wind
+    LayoutGrid, RefreshCw, ChevronLeft, ChevronRight,
+    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Wind
 } from 'lucide-react';
 // Ensure this path matches where you put the file
 import { generateMoodImageFromBoard, generateBoardDescription } from './services/imageGenerator';
@@ -459,6 +459,28 @@ const OrganicMoodboard = () => {
     const [layoutMode, setLayoutMode] = useState<'organic' | 'grid' | 'animate'>('organic');
     const [activeIndex, setActiveIndex] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+    useEffect(() => {
+        const handleResize = () => {
+            setWindowWidth(window.innerWidth);
+            if (layoutMode === 'grid') {
+                // Debounce re-layout could be better, but direct call is fine for now
+                // We need to trigger a re-render or re-calculation
+                // Since getGridPos uses windowWidth (which we just set), 
+                // we might need to explicitly call reLayoutGrid in a separate effect or here
+            }
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [layoutMode]);
+
+    // Re-layout grid when window width changes
+    useEffect(() => {
+        if (layoutMode === 'grid') {
+            reLayoutGrid(items);
+        }
+    }, [windowWidth]);
 
     // Style State
     const [dashboardRadius, setDashboardRadius] = useState(32);
@@ -623,12 +645,12 @@ const OrganicMoodboard = () => {
     };
 
     const getGridPos = (index: number, totalCount: number) => {
-        const cols = 5;
-        const rows = Math.ceil(totalCount / cols);
+        const cols = windowWidth < 640 ? 2 : windowWidth < 1024 ? 3 : 5;
+        // const rows = Math.ceil(totalCount / cols); // Unused
         const gap = 3;
         const cellWidth = (90 - (gap * (cols - 1))) / cols;
         // Fixed height for grid cells to allow scrolling, approx 20% of screen height
-        const cellHeight = 22;
+        const cellHeight = windowWidth < 640 ? 30 : 22;
         const col = index % cols;
         const row = Math.floor(index / cols);
         const gridTotalWidth = (cols * cellWidth) + ((cols - 1) * gap);
@@ -720,8 +742,8 @@ const OrganicMoodboard = () => {
 
         // 1. Create Placeholder Item
         const predictedTotal = items.length + 1;
-        const gridData = getSmartPos(items.length, predictedTotal, layoutMode);
-        const containerWidth = containerRef.current?.clientWidth || 1200;
+        // const gridData = getSmartPos(items.length, predictedTotal, layoutMode); // Unused
+        // const containerWidth = containerRef.current?.clientWidth || 1200; // Unused
         const newId = Math.random().toString(36).substr(2, 9);
 
         const placeholderItem: BoardItem = {
@@ -956,13 +978,13 @@ const OrganicMoodboard = () => {
 
             <Styles />
 
-            <div ref={exportWrapperRef} className="p-12 w-full h-full flex items-center justify-center">
+            <div ref={exportWrapperRef} className="p-0 md:p-12 w-full h-full flex items-center justify-center">
 
                 <div
-                    className="relative w-full h-full max-w-[1800px] aspect-[16/10] shadow-2xl overflow-hidden flex flex-row transition-all duration-500"
+                    className="relative w-full h-full max-w-[1800px] md:aspect-[16/10] shadow-2xl overflow-hidden flex flex-row transition-all duration-500"
                     style={{
                         background: bgMode === 'solid' ? background : '#FFFFFF',
-                        borderRadius: `${dashboardRadius}px`
+                        borderRadius: windowWidth < 768 ? '0px' : `${dashboardRadius}px`
                     }}
                 >
                     <AnimatePresence mode='popLayout'>
@@ -997,7 +1019,7 @@ const OrganicMoodboard = () => {
                         {isSidebarOpen && (
                             <motion.div
                                 initial={{ width: 0, opacity: 0 }}
-                                animate={{ width: "20%", opacity: 1 }}
+                                animate={{ width: windowWidth < 768 ? "100%" : "20%", opacity: 1 }}
                                 exit={{ width: 0, opacity: 0 }}
                                 transition={{ duration: 0.4, ease: "easeInOut" }}
                                 className="h-full flex flex-col p-8 border-r border-black/5 relative z-20 bg-[#f5f5f5]"
@@ -1200,7 +1222,7 @@ const OrganicMoodboard = () => {
                     </div>
                     {/* --- DOCK --- */}
                     {!isExporting && (
-                        <div id="dock-controls" className="absolute bottom-8 right-8 z-[9999] flex flex-col items-end gap-4">
+                        <div id="dock-controls" className="absolute bottom-4 left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-end gap-4 pointer-events-none">
                             {showSettings && (
                                 <div className="flex flex-col gap-4 p-5 rounded-3xl bg-neutral-900/95 backdrop-blur-md border border-white/10 shadow-2xl animate-in slide-in-from-bottom-2 fade-in w-80">
                                     <div className="space-y-5">
@@ -1250,7 +1272,7 @@ const OrganicMoodboard = () => {
                             )}
 
                             {/* UPDATED MENU: Frosted Light Theme */}
-                            <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border border-white/50">
+                            <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border border-white/50 overflow-x-auto max-w-full pointer-events-auto no-scrollbar">
                                 <div className="relative group">
                                     <DockButton onClick={() => fileInputRef.current?.click()} icon={Plus} label="Add" />
                                     <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />

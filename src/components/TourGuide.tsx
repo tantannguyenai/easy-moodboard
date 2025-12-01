@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -39,7 +39,7 @@ const TOUR_STEPS: TourStep[] = [
 export const TourGuide = () => {
     const [currentStep, setCurrentStep] = useState(0);
     const [isVisible, setIsVisible] = useState(true);
-    const [coords, setCoords] = useState({ x: 0, y: 0, arrowOffset: 0 });
+    const [coords, setCoords] = useState<{ x: number, y: number, arrowOffset: number, placement: string }>({ x: 0, y: 0, arrowOffset: 0, placement: 'bottom' });
     const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
     useEffect(() => {
@@ -72,6 +72,12 @@ export const TourGuide = () => {
             let y = 0;
             let arrowOffset = 0;
 
+            let effectivePosition = step.position;
+            // Force vertical positioning on mobile for side-aligned steps
+            if (viewportWidth < 768 && (step.position === 'left' || step.position === 'right')) {
+                effectivePosition = 'bottom';
+            }
+
             if (step.targetId === 'moodboard-canvas') {
                 // Center of the canvas
                 x = rect.left + rect.width / 2;
@@ -80,7 +86,7 @@ export const TourGuide = () => {
                 x -= tooltipWidth / 2;
                 y -= tooltipHeight / 2;
             } else {
-                switch (step.position) {
+                switch (effectivePosition) {
                     case 'top':
                         // Initial X is center of target
                         x = rect.left + rect.width / 2;
@@ -94,7 +100,7 @@ export const TourGuide = () => {
                         const minX = screenPadding;
                         const maxX = viewportWidth - screenPadding - tooltipWidth;
 
-                        const originalX = x;
+                        // const originalX = x; // Unused
                         x = Math.max(minX, Math.min(x, maxX));
 
                         // Calculate arrow offset to keep it pointing at target center
@@ -130,7 +136,7 @@ export const TourGuide = () => {
             const maxArrowOffset = (tooltipWidth / 2) - 24;
             arrowOffset = Math.max(-maxArrowOffset, Math.min(arrowOffset, maxArrowOffset));
 
-            setCoords({ x, y, arrowOffset });
+            setCoords({ x, y, arrowOffset, placement: effectivePosition });
         }
     };
 
@@ -203,7 +209,7 @@ export const TourGuide = () => {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.9 }}
                         transition={{ type: "spring", duration: 0.5 }}
-                        className="fixed z-[10001] w-80 bg-white/90 backdrop-blur-xl p-6 rounded-2xl shadow-2xl border border-white/50"
+                        className="fixed z-[10001] w-80 max-w-[calc(100vw-32px)] bg-white/90 backdrop-blur-xl p-6 rounded-2xl shadow-2xl border border-white/50"
                         style={{
                             left: coords.x,
                             top: coords.y,
@@ -249,16 +255,16 @@ export const TourGuide = () => {
                         {step.targetId !== 'moodboard-canvas' && (
                             <div
                                 className={`absolute w-4 h-4 bg-white/90 border-l border-t border-white/50 transform rotate-45
-                                    ${step.position === 'top' ? 'bottom-[-8px] border-l-0 border-t-0 border-r border-b shadow-sm' : ''}
-                                    ${step.position === 'bottom' ? 'top-[-8px] shadow-[-2px_-2px_5px_rgba(0,0,0,0.05)]' : ''}
-                                    ${step.position === 'left' ? 'right-[-8px] top-1/2 -translate-y-1/2 border-l-0 border-b-0 border-r border-t shadow-sm' : ''}
-                                    ${step.position === 'right' ? 'left-[-8px] top-1/2 -translate-y-1/2 border-r-0 border-t-0 border-l border-b shadow-[-2px_2px_5px_rgba(0,0,0,0.05)]' : ''}
+                                    ${coords.placement === 'top' ? 'bottom-[-8px] border-l-0 border-t-0 border-r border-b shadow-sm' : ''}
+                                    ${coords.placement === 'bottom' ? 'top-[-8px] shadow-[-2px_-2px_5px_rgba(0,0,0,0.05)]' : ''}
+                                    ${coords.placement === 'left' ? 'right-[-8px] top-1/2 -translate-y-1/2 border-l-0 border-b-0 border-r border-t shadow-sm' : ''}
+                                    ${coords.placement === 'right' ? 'left-[-8px] top-1/2 -translate-y-1/2 border-r-0 border-t-0 border-l border-b shadow-[-2px_2px_5px_rgba(0,0,0,0.05)]' : ''}
                                 `}
                                 style={{
-                                    left: (step.position === 'top' || step.position === 'bottom')
+                                    left: (coords.placement === 'top' || coords.placement === 'bottom')
                                         ? `calc(50% + ${coords.arrowOffset}px)`
                                         : undefined,
-                                    transform: (step.position === 'top' || step.position === 'bottom')
+                                    transform: (coords.placement === 'top' || coords.placement === 'bottom')
                                         ? 'translateX(-50%) rotate(45deg)'
                                         : 'rotate(45deg)'
                                 }}
