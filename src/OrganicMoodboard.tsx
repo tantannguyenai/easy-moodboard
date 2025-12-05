@@ -1432,7 +1432,7 @@ const OrganicMoodboard = () => {
                 }
             };
 
-            saveBoard(newBoard);
+            await saveBoard(newBoard);
             setCurrentBoardId(newBoard.id);
             // alert("Saved to Community!"); // Optional feedback
             setViewMode('community');

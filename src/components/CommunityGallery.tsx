@@ -13,13 +13,17 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({ onLoadBoard, onCrea
     const [boards, setBoards] = useState<SavedMoodboard[]>([]);
 
     useEffect(() => {
-        setBoards(getBoards());
+        const load = async () => {
+            const data = await getBoards();
+            setBoards(data);
+        };
+        load();
     }, []);
 
-    const handleDelete = (e: React.MouseEvent, id: string) => {
+    const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         if (confirm("Are you sure you want to delete this moodboard?")) {
-            deleteBoard(id);
+            await deleteBoard(id);
             setBoards(prev => prev.filter(b => b.id !== id));
         }
     };
