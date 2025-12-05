@@ -36,18 +36,19 @@ const TOUR_STEPS: TourStep[] = [
     }
 ];
 
-export const TourGuide = ({ onStepChange }: { onStepChange?: (step: number) => void }) => {
+export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: number) => void, onComplete?: () => void }) => {
     const [currentStep, setCurrentStep] = useState(0);
     const [isVisible, setIsVisible] = useState(true);
     const [coords, setCoords] = useState<{ x: number, y: number, arrowOffset: number, placement: string }>({ x: 0, y: 0, arrowOffset: 0, placement: 'bottom' });
-    const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+    const [targetRect, setTargetRect] = useState<{ rect: DOMRect; step: number } | null>(null);
 
     useEffect(() => {
         // Check if tour has been completed before
-        // const hasSeenTour = localStorage.getItem('hasSeenTour');
-        // if (hasSeenTour) {
-        //     setIsVisible(false);
-        // }
+        const hasSeenTour = localStorage.getItem('hasSeenTour');
+        if (hasSeenTour) {
+            setIsVisible(false);
+            onComplete?.();
+        }
     }, []);
 
     const tooltipRef = useRef<HTMLDivElement>(null);
@@ -59,7 +60,7 @@ export const TourGuide = ({ onStepChange }: { onStepChange?: (step: number) => v
         const element = document.getElementById(step.targetId);
         if (element) {
             const rect = element.getBoundingClientRect();
-            setTargetRect(rect);
+            setTargetRect({ rect, step: currentStep });
 
             const gap = 12;
             // Measure actual width/height if available, fallback to defaults
@@ -167,6 +168,7 @@ export const TourGuide = ({ onStepChange }: { onStepChange?: (step: number) => v
     const handleClose = () => {
         setIsVisible(false);
         localStorage.setItem('hasSeenTour', 'true');
+        onComplete?.();
     };
 
     if (!isVisible) return null;
@@ -188,17 +190,17 @@ export const TourGuide = ({ onStepChange }: { onStepChange?: (step: number) => v
                     )}
 
                     {/* Highlight Effect for target */}
-                    {targetRect && (
+                    {targetRect && targetRect.step === currentStep && currentStep > 0 && (
                         <motion.div
                             layoutId="tour-highlight"
                             className="fixed z-[10000] pointer-events-none border-2 rounded-xl shadow-[0_0_20px_rgba(138,103,63,0.4)]"
                             style={{ borderColor: '#8A673F' }}
                             initial={false}
                             animate={{
-                                top: targetRect.top - 4,
-                                left: targetRect.left - 4,
-                                width: targetRect.width + 8,
-                                height: targetRect.height + 8,
+                                top: targetRect.rect.top - 4,
+                                left: targetRect.rect.left - 4,
+                                width: targetRect.rect.width + 8,
+                                height: targetRect.rect.height + 8,
                             }}
                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
                         />

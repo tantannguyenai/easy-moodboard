@@ -1,16 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
 // FIX: Added 'type' keyword before Variants to satisfy strict TS rules
-import { motion, AnimatePresence, type Variants, usePresence } from 'framer-motion';
+import { motion, AnimatePresence, usePresence, useMotionValue, useVelocity, useTransform, useSpring, animate } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import {
-    Download, X, Plus, Type, Settings, Scaling, CaseUpper,
-    LayoutGrid, RefreshCw, ChevronLeft, ChevronRight,
-    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Wind
+    Download, X, Plus, Type, SlidersHorizontal, Scaling, CaseUpper,
+    Grid2X2, RefreshCw, ChevronLeft, ChevronRight,
+    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Infinity as InfinityIcon, RotateCw, Music, FileImage, Shuffle, Users
 } from 'lucide-react';
 // Ensure this path matches where you put the file
 import { generateMoodImageFromBoard, generateBoardDescription } from './services/imageGenerator';
 import MoodLogo from '../easy-moodboard/src/assets/moodlogo.svg';
 import { TourGuide } from './components/TourGuide';
+import { PDFFlipBook } from './components/PDFFlipBook'; // Import PDF component
+import { ShaderBackground } from './components/ShaderBackground'; // Import ShaderBackground
+import { DissolveEffect } from './components/DissolveEffect'; // Import DissolveEffect
+import { saveBoard } from './services/storage'; // Import storage service
+import type { SavedMoodboard } from './services/storage'; // Import type separately
+import CommunityGallery from './components/CommunityGallery'; // Import CommunityGallery
+import { pdfjs } from 'react-pdf';
+
+// Configure worker for PDF processing
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 // --- Constants ---
 const QUOTES = [
@@ -21,7 +31,14 @@ const QUOTES = [
     { text: "Everything you can imagine is real.", author: "Pablo Picasso" },
 ];
 
+const ARTISTS = [
+    "Alex Chen", "Jordan Lee", "Casey Smith", "Taylor Kim", "Morgan Davis",
+    "Jamie Wilson", "Riley Brown", "Avery Miller", "Quinn Taylor", "Skyler Anderson",
+    "Dakota Thomas", "Reese Martinez", "Cameron White", "Parker Harris", "Sage Clark"
+];
+
 const FONTS = [
+    { name: "Piazzolla", family: "'Piazzolla', serif" },
     { name: "Modern Sans", family: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif" },
     { name: "Elegant Serif", family: "Georgia, Cambria, 'Times New Roman', Times, serif" },
     { name: "Tech Mono", family: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
@@ -30,9 +47,9 @@ const FONTS = [
 ];
 
 // --- Types ---
-type BoardItem = {
+export type BoardItem = {
     id: string;
-    type: 'image' | 'text';
+    type: 'image' | 'text' | 'video' | 'audio' | 'pdf';
     content: string;
     author?: string;
     x: number;
@@ -44,34 +61,50 @@ type BoardItem = {
     manualWidth?: number;
     aspectRatio?: number;
     isLoading?: boolean; // Added for loading state
+    isGenerated?: boolean; // Added to track AI generated images
 };
 
 // --- STYLES FOR EFFECTS ---
 const Styles = () => (
     <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Piazzolla:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@500&display=swap');
     @keyframes rainbow-pulse {
-      0% { filter: hue-rotate(0deg) blur(8px); opacity: 0.8; }
-      50% { filter: hue-rotate(180deg) blur(12px); opacity: 1; transform: scale(1.02); }
-      100% { filter: hue-rotate(360deg) blur(8px); opacity: 0.8; }
+      0% { filter: hue-rotate(0deg) blur(15px); opacity: 0.4; }
+      50% { filter: hue-rotate(180deg) blur(20px); opacity: 0.6; transform: scale(1.02); }
+      100% { filter: hue-rotate(360deg) blur(15px); opacity: 0.4; }
     }
-    @keyframes subtle-glow {
-      0% { box-shadow: 0 0 5px rgba(139, 92, 246, 0.3), 0 0 10px rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.5); }
-      50% { box-shadow: 0 0 15px rgba(139, 92, 246, 0.6), 0 0 25px rgba(139, 92, 246, 0.3); border-color: rgba(139, 92, 246, 0.8); }
-      100% { box-shadow: 0 0 5px rgba(139, 92, 246, 0.3), 0 0 10px rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.5); }
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    @keyframes dreamy-glow {
+      0% { box-shadow: 0 0 8px rgba(249, 115, 22, 0.4), 0 0 16px rgba(249, 115, 22, 0.2); border-color: rgba(249, 115, 22, 0.6); }
+      50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5), 0 0 40px rgba(59, 130, 246, 0.3); border-color: rgba(59, 130, 246, 0.6); }
+      100% { box-shadow: 0 0 8px rgba(249, 115, 22, 0.4), 0 0 16px rgba(249, 115, 22, 0.2); border-color: rgba(249, 115, 22, 0.6); }
     }
     .ai-button-glow {
-      animation: subtle-glow 3s infinite ease-in-out;
-      border: 1px solid rgba(139, 92, 246, 0.5);
+      animation: dreamy-glow 4s infinite ease-in-out;
+      border: 1px solid rgba(249, 115, 22, 0.5);
     }
     .magical-glow {
       position: absolute;
       inset: -10px;
-      border-radius: 20px;
-      background: linear-gradient(45deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
+      background: linear-gradient(45deg, #ff00cc, #3333ff, #00ccff, #ff00cc);
       background-size: 400%;
+      border-radius: inherit;
       z-index: -1;
-      animation: rainbow-pulse 3s linear infinite;
+      animation: rainbow-pulse 4s linear infinite;
       pointer-events: none;
+    }
+    .border-beam {
+        position: absolute;
+        inset: -2px;
+        border-radius: inherit;
+        background: conic-gradient(from 0deg, transparent 0%, transparent 70%, rgba(255, 255, 255, 0.8) 90%, transparent 100%);
+        animation: spin 3s linear infinite;
+        filter: blur(3px);
+        z-index: 0;
     }
     /* Minimal Scrollbar */
     .custom-scrollbar::-webkit-scrollbar {
@@ -90,6 +123,23 @@ const Styles = () => (
     .custom-scrollbar::-webkit-scrollbar-thumb:hover {
       background: rgba(0, 0, 0, 0.2);
     }
+    @keyframes gradient-move {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    @keyframes wave-scroll {
+        0% { background-position: 0% 50%; }
+        100% { background-position: 200% 50%; }
+    }
+    @keyframes icon-dance {
+        0%, 100% { transform: scale(1) rotate(0deg); }
+        25% { transform: scale(1.1) rotate(-10deg); }
+        75% { transform: scale(1.1) rotate(10deg); }
+    }
+    .icon-dance {
+        animation: icon-dance 1s ease-in-out infinite;
+    }
   `}</style>
 );
 
@@ -103,10 +153,12 @@ const DockButton = ({ onClick, icon: Icon, label, active = false, className = ""
       ${active ? 'bg-black text-white shadow-xl scale-105' : 'hover:bg-black/5 text-neutral-600 hover:text-black hover:scale-105'} 
       ${className}`}
     >
-        <Icon size={20} strokeWidth={2} />
-        <span className="absolute -top-10 bg-white/80 backdrop-blur-md text-black/80 border border-black/5 shadow-sm text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-            {label}
-        </span>
+        <Icon size={22} strokeWidth={1.5} />
+        {label && (
+            <span className="absolute -top-10 bg-white/80 backdrop-blur-md text-black/80 border border-black/5 shadow-sm text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                {label}
+            </span>
+        )}
     </button>
 );
 
@@ -202,98 +254,408 @@ const LoadingCards = () => (
 );
 
 // --- PARTICLE EXPLOSION COMPONENT ---
-const ParticleExplosion = ({ imageSrc }: { imageSrc: string }) => {
-    const particles = [];
-    const gridSize = 16; // 16x16 grid = 256 particles
 
-    for (let i = 0; i < gridSize; i++) {
-        for (let j = 0; j < gridSize; j++) {
-            particles.push({
-                i,
-                j,
-                // Pre-calculate random physics for each particle
-                randomX: (Math.random() - 0.5) * 400, // Slightly reduced range for control
-                randomY: (Math.random() - 0.5) * 400 + (Math.random() * 100),
-                randomRotate: (Math.random() - 0.5) * 180, // Reduced rotation for smoothness
-                randomScale: 0.3 + Math.random() * 0.5,
-                duration: 1.2 + Math.random() * 0.8, // Longer, smoother duration
-                delay: Math.random() * 0.2 // More delay variance to break grid
-            });
+
+// --- AUDIO PLAYER COMPONENT ---
+const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const audioRef = useRef<HTMLAudioElement>(null);
+
+    const togglePlay = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (audioRef.current) {
+            if (isPlaying) {
+                audioRef.current.pause();
+            } else {
+                audioRef.current.play();
+            }
+            setIsPlaying(!isPlaying);
         }
-    }
+    };
 
     return (
-        <div className="absolute inset-0 z-50 pointer-events-none">
-            {particles.map((p) => (
-                <motion.div
-                    key={`${p.i}-${p.j}`}
-                    initial={{
-                        opacity: 1,
-                        scale: 1,
-                        x: 0,
-                        y: 0
-                    }}
-                    animate={{
-                        opacity: 0,
-                        scale: 0,
-                        x: p.randomX,
-                        y: p.randomY,
-                        rotate: p.randomRotate
-                    }}
-                    transition={{
-                        duration: p.duration,
-                        ease: [0.4, 0, 0.2, 1], // Smooth bezier curve
-                        delay: p.delay
-                    }}
-                    className="absolute"
-                    style={{
-                        top: `${p.i * 6.25}%`,
-                        left: `${p.j * 6.25}%`,
-                        width: '6.25%',
-                        height: '6.25%',
-                        backgroundImage: `url(${imageSrc})`,
-                        backgroundSize: '1600% 1600%', // 16x grid means 1600% size
-                        backgroundPosition: `${p.j * 6.66}% ${p.i * 6.66}%`, // 100 / 15 ≈ 6.666
-                        borderRadius: '2px' // Slightly softer edges
-                    }}
-                />
-            ))}
+        <div
+            className={`flex items-center gap-3 p-4 border-[3px] border-white/20 shadow-lg overflow-hidden relative ${className}`}
+            style={{
+                ...style,
+                borderRadius: `${imageRadius}px`,
+                backdropFilter: "blur(20px)"
+            }}
+        >
+            {/* Background Layer with Mask */}
+            <div
+                className="absolute inset-0 z-0 transition-all duration-500"
+                style={{
+                    background: isPlaying
+                        ? "repeating-linear-gradient(90deg, #a8edea, #fed6e3 25%, #a8edea 50%)"
+                        : "rgba(255, 255, 255, 0.8)",
+                    backgroundSize: isPlaying ? "200% 100%" : "auto",
+                    animation: isPlaying ? "wave-scroll 3s linear infinite" : "none",
+                    maskImage: isPlaying ? 'linear-gradient(to bottom, transparent 20%, black 100%)' : 'none',
+                    WebkitMaskImage: isPlaying ? 'linear-gradient(to bottom, transparent 20%, black 100%)' : 'none'
+                }}
+            />
+
+            <audio ref={audioRef} src={src} onEnded={() => setIsPlaying(false)} />
+
+            <button
+                onClick={togglePlay}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-white/50 hover:bg-white text-gray-900 border border-white/20 hover:scale-105 transition-all shadow-sm flex-shrink-0 cursor-pointer z-20 backdrop-blur-sm"
+            >
+                {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-1" />}
+            </button>
+
+            <div className="flex-1 min-w-0 flex flex-col justify-center relative z-10">
+                <div className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${isPlaying ? 'text-gray-600' : 'text-gray-400'}`}>Audio</div>
+                <div className="text-sm font-medium text-gray-800 truncate w-full" title={fileName}>{fileName || "Unknown Track"}</div>
+            </div>
+
+            <div className={`w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 relative z-10 transition-colors ${isPlaying ? 'bg-white/50 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
+                <Music size={16} className={isPlaying ? "icon-dance" : ""} />
+            </div>
         </div>
     );
 };
 
 // --- BOARD ITEM COMPONENT ---
+// --- FLIPPABLE IMAGE COMPONENT ---
+const FlippableImage = ({ item, isFlipped, onToggleFlip, style, className, showBorders, imageRadius, borderThickness = 10, children, boardTitle, boardAuthor, isShaderActive, isExporting }: any) => {
+    return (
+        <motion.div
+            className={`relative w-full h-full ${className}`}
+            style={{ ...style, transformStyle: 'preserve-3d', cursor: 'pointer' }}
+            onClick={(e) => {
+                e.stopPropagation(); // Prevent triggering parent click events if any
+                onToggleFlip(item.id);
+            }}
+            initial={false}
+            animate={{
+                rotateY: isFlipped ? 180 : 0,
+                scale: isFlipped ? [1, 1.1, 1] : [1, 1.1, 1], // Trigger pop on every flip
+            }}
+            transition={{
+                rotateY: { duration: 0.8, ease: [0.4, 0, 0.2, 1] },
+                scale: { duration: 0.8, times: [0, 0.5, 1], ease: "easeInOut" }
+            }}
+        >
+            {/* FRONT FACE */}
+            <div className="absolute inset-0 w-full h-full" style={{ backfaceVisibility: 'hidden' }}>
+                <div className={`w-full h-full overflow-hidden ${showBorders && !isShaderActive ? 'bg-white/40 backdrop-blur-md' : ''}`}
+                    style={{
+                        padding: '0px',
+                        borderRadius: `${imageRadius}px`,
+                        boxShadow: showBorders
+                            ? (isShaderActive
+                                ? '0 30px 60px -12px rgba(0,0,0,0.6)' // Deeper shadow for shader mode
+                                : `0 0 0 ${borderThickness}px rgba(255,255,255,0.2), 0 25px 50px -12px rgba(0,0,0,0.5)`
+                            )
+                            : '0 25px 50px -12px rgba(0,0,0,0.5)',
+                        outline: (showBorders && !isShaderActive) ? '1px solid rgba(209, 213, 219, 0.6)' : 'none',
+                        outlineOffset: (showBorders && !isShaderActive) ? `${borderThickness}px` : '0px'
+                    }}>
+                    {item.type === 'video' ? (
+                        <video
+                            src={item.content}
+                            className="pointer-events-none select-none object-cover w-full h-full block"
+                            style={{
+                                borderRadius: `${imageRadius}px`,
+                                objectFit: 'cover'
+                            }}
+                            autoPlay
+                            loop
+                            muted
+                            playsInline
+                        />
+                    ) : (
+                        <img
+                            src={item.content}
+                            className="pointer-events-none select-none object-cover w-full h-full block"
+                            style={{
+                                borderRadius: `${imageRadius}px`,
+                                objectFit: 'cover'
+                            }}
+                            crossOrigin="anonymous"
+                        />
+                    )}
+                    {children}
+                </div>
+
+                {/* SHADER MODE GRADIENT STROKE */}
+                {isShaderActive && showBorders && (
+                    <div
+                        className="absolute inset-0 pointer-events-none z-50"
+                        style={{
+                            borderRadius: `${imageRadius}px`,
+                            padding: '1.5px', // Stroke thickness
+                            background: 'linear-gradient(135deg, rgba(255,255,255,1) 0%, rgba(255,255,255,0) 100%)',
+                            mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                            maskComposite: 'exclude',
+                            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                            WebkitMaskComposite: 'xor',
+                        }}
+                    />
+                )}
+            </div>
+
+            {/* BACK FACE */}
+            {!isExporting && (
+                <div
+                    className="absolute inset-0 w-full h-full bg-white/95 backdrop-blur-md flex flex-col justify-end items-start p-6 text-left border-[3px] border-white/20"
+                    style={{
+                        backfaceVisibility: 'hidden',
+                        transform: 'rotateY(180deg)',
+                        borderRadius: `${imageRadius}px`,
+                        boxShadow: '0 10px 30px -10px rgba(0,0,0,0.2)'
+                    }}
+                >
+                    {item.isGenerated ? (
+                        <>
+                            <div className="text-xs font-bold tracking-widest text-purple-600 uppercase mb-1">Generated Image</div>
+                            <div className="text-sm font-serif text-gray-900 mb-4 leading-relaxed">
+                                This image is generated based on the images from <span className="font-bold">{boardTitle || "Visual Exploration 01"}</span> curated by <span className="font-bold">{boardAuthor || "Studio Name"}</span>.
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="text-xs font-bold tracking-widest text-purple-600 uppercase mb-1">Artist</div>
+                            <div className="text-xl font-serif text-gray-900 mb-4 leading-tight">{item.author || ARTISTS[Math.abs(item.id.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)) % ARTISTS.length]}</div>
+                        </>
+                    )}
+
+                    <div className="w-8 h-[1px] bg-gray-300 mb-4"></div>
+
+                    <div className="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">Date</div>
+                    <div className="text-sm font-medium text-gray-700">Nov 2024</div>
+                </div>
+            )}
+        </motion.div>
+    );
+};
+
+// --- INSPIRATION QUOTE COMPONENT ---
+const INSPIRATION_QUOTES = [
+    "A hush of colors drifts like fog over a quiet sea, inviting every sketch to breathe.",
+    "The moodboard is a map of soft weather—luminous storms, tender shadows, and roads made of hue.",
+    "Texture becomes memory: velvet echoes, grain murmurs, paper remembers our touch.",
+    "A small constellation of references—each image a star, each note a faint gravity.",
+    "We collect the air itself: a breeze of ideas, a draft that turns into weather."
+];
+
+const InspirationQuote = () => {
+    const [index, setIndex] = useState(0);
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setIndex((prev) => (prev + 1) % INSPIRATION_QUOTES.length);
+        }, 60000); // 1 minute
+        return () => clearInterval(timer);
+    }, []);
+
+    const handleClick = () => {
+        setIndex((prev) => (prev + 1) % INSPIRATION_QUOTES.length);
+    };
+
+    const words = INSPIRATION_QUOTES[index].split(" ");
+
+    return (
+        <div
+            className="max-w-md cursor-pointer pointer-events-auto"
+            onClick={handleClick}
+        >
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key={index}
+                    initial="hidden"
+                    animate="visible"
+                    exit="hidden"
+                    variants={{
+                        visible: { transition: { staggerChildren: 0.12 } },
+                        hidden: {}
+                    }}
+                    className="flex flex-wrap gap-x-1.5"
+                >
+                    {words.map((word, i) => (
+                        <motion.span
+                            key={i}
+                            variants={{
+                                hidden: { opacity: 0, filter: 'blur(10px)', x: -10 },
+                                visible: { opacity: 1, filter: 'blur(0px)', x: 0, transition: { duration: 2.5, ease: "easeInOut" } }
+                            }}
+                            className="text-sm font-medium text-gray-400 tracking-wide leading-relaxed"
+                        >
+                            {word}
+                        </motion.span>
+                    ))}
+                </motion.div>
+            </AnimatePresence>
+        </div>
+    );
+};
+
+const InteractiveQuote = () => {
+    const text = "Design the feeling first; let evidence arrange the form.";
+    const words = text.split(" ");
+
+    // Mouse position state
+    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    const [isHovering, setIsHovering] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        setMousePosition({
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        });
+        setIsHovering(true);
+    };
+
+    const handleMouseLeave = () => {
+        setIsHovering(false);
+    };
+
+    return (
+        <div
+            ref={containerRef}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            className="text-2xl md:text-3xl font-serif text-center max-w-lg leading-relaxed italic pointer-events-auto cursor-default select-none relative"
+        >
+            {/* Base layer - Dimmed */}
+            <div className="text-gray-300 opacity-20 transition-opacity duration-500">
+                {words.map((word, i) => (
+                    <span key={i} className="inline-block mx-1.5">
+                        {word === "first;" ? (
+                            <>
+                                first;
+                                <br className="hidden md:block" />
+                            </>
+                        ) : word}
+                    </span>
+                ))}
+            </div>
+
+            {/* Overlay layer - Soft Pastel Gradient Masked */}
+            <motion.div
+                className="absolute inset-0 pointer-events-none"
+                animate={{
+                    maskImage: isHovering
+                        ? `radial-gradient(circle 80px at ${mousePosition.x}px ${mousePosition.y}px, black 0%, transparent 100%)`
+                        : `radial-gradient(circle 0px at ${mousePosition.x}px ${mousePosition.y}px, black 0%, transparent 100%)`,
+                }}
+                style={{
+                    WebkitMaskImage: isHovering
+                        ? `radial-gradient(circle 80px at ${mousePosition.x}px ${mousePosition.y}px, black 0%, transparent 100%)`
+                        : `radial-gradient(circle 0px at ${mousePosition.x}px ${mousePosition.y}px, black 0%, transparent 100%)`,
+                }}
+                transition={{ type: "tween", ease: "backOut", duration: 0.2 }}
+            >
+                <motion.div
+                    className="bg-gradient-to-r from-rose-300 via-purple-300 via-sky-300 to-teal-300 bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] bg-[length:200%_auto]"
+                    animate={{
+                        backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"],
+                    }}
+                    transition={{
+                        duration: 10,
+                        ease: "linear",
+                        repeat: Infinity,
+                    }}
+                >
+                    {words.map((word, i) => (
+                        <span key={i} className="inline-block mx-1.5">
+                            {word === "first;" ? (
+                                <>
+                                    first;
+                                    <br className="hidden md:block" />
+                                </>
+                            ) : word}
+                        </span>
+                    ))}
+                </motion.div>
+            </motion.div>
+        </div>
+    );
+};
+
 const BoardItem = React.forwardRef(({
     item,
-    layoutMode,
+
     isExporting,
     magicalItems,
     removeItem,
     handleResizeStart,
+    handleRotateStart, // New prop
     imageRadius,
+
     showBorders,
+    borderThickness, // Added prop
     quoteSize,
     updateItemContent,
     bringToFront,
     isActive, // for Show mode
     resizingId,
     containerRef,
-    index // Added index for staggered animation
+    index, // Added index for staggered animation
+    isFlipped, // Added for 3D flip
+    onToggleFlip,
+    boardTitle,
+    boardAuthor
 }: any, ref: any) => {
     const [isPresent, safeToRemove] = usePresence();
+    const isDraggingRef = useRef(false); // Track dragging state
+    const [shadowColor, setShadowColor] = useState("rgba(0, 0, 0, 0.5)"); // Default shadow color
+
+    // Extract dominant color for shadow
+    useEffect(() => {
+        if (item.type === 'image' && item.content) {
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.src = item.content;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                canvas.width = 1; canvas.height = 1;
+                ctx.drawImage(img, 0, 0, 1, 1);
+                const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+                setShadowColor(`rgba(${r}, ${g}, ${b}, 0.6)`);
+            };
+        }
+    }, [item.content, item.type]);
+
+
+
+    // ... inside BoardItem ...
 
     useEffect(() => {
         if (!isPresent) {
-            const timer = setTimeout(safeToRemove, 2000); // 2s duration to match new particle physics
+            const timer = setTimeout(safeToRemove, 2000); // 2s duration to match shader
             return () => clearTimeout(timer);
         }
     }, [isPresent, safeToRemove]);
 
-    // If deleted and it's an image, show explosion
-    const showExplosion = !isPresent && item.type === 'image';
+    // If deleted and it's an image, show dissolve effect
+    const showDissolve = !isPresent && item.type === 'image';
 
     // Calculate height to prevent collapse during explosion
-    const computedHeight = item.height || (item.type === 'image' && item.aspectRatio ? item.width * item.aspectRatio : 'auto');
+    // Also used for maintaining aspect ratio during resize/layout
+    const computedHeight = (item.type === 'image' || item.type === 'video' || item.type === 'pdf') && item.aspectRatio
+        ? item.width * item.aspectRatio
+        : item.height;
+
+    // --- WIGGLE EFFECT LOGIC ---
+    const x = useMotionValue(0);
+    const y = useMotionValue(0); // Added y motion value
+    const xVelocity = useVelocity(x);
+    const smoothVelocity = useSpring(xVelocity, { damping: 50, stiffness: 400 });
+    // Map velocity to rotation: moving right -> rotate right (positive), moving left -> rotate left (negative)
+    // Range: -1000 to 1000 velocity maps to -15 to 15 degrees rotation
+    const velocityRotate = useTransform(smoothVelocity, [-1000, 1000], [-15, 15]);
+
+    // Combine base rotation with velocity rotation
+    // We need to use a transform to add the base rotation to the velocity rotation
+    const currentRotation = useTransform(velocityRotate, (r) => item.rotation + r);
 
     return (
         <motion.div
@@ -306,12 +668,17 @@ const BoardItem = React.forwardRef(({
                 scale: isActive ? 1.05 : 1,
                 x: 0,
                 y: 0,
-                rotate: item.rotation,
                 zIndex: item.zIndex,
-                width: item.width,
-                height: computedHeight
+                ...(resizingId === item.id ? {} : {
+                    width: item.width,
+                    height: computedHeight
+                })
             }}
-            exit={showExplosion ? { opacity: 1 } : { opacity: 0, scale: 0.8 }}
+            exit={{ opacity: 0, transition: { duration: 2.0 } }} // Keep opacity 1 longer? No, we want to fade out the container while shader runs? 
+            // Actually, if we fade out the container, the shader fades too.
+            // Let's set exit opacity to 1, and let the shader handle the fade out visually?
+            // Or keep opacity 1 for most of the time then fade?
+            // If I set exit opacity to 0 over 2s, the shader will also fade out. That's fine, it adds to the effect.
             transition={{
                 type: "spring",
                 stiffness: 120, // Softer spring (was 300)
@@ -323,28 +690,87 @@ const BoardItem = React.forwardRef(({
             drag={!isExporting}
             dragConstraints={containerRef}
             dragElastic={0.1}
-            dragMomentum={false}
-            onDragStart={() => bringToFront(item.id)}
+            dragMomentum={false} // Disable default momentum to use custom bounce physics
+            dragTransition={{ power: 0.2, timeConstant: 200 }}
+            onDragStart={() => {
+                isDraggingRef.current = true;
+                bringToFront(item.id);
+            }}
+            onDragEnd={(_, info) => {
+                setTimeout(() => {
+                    isDraggingRef.current = false;
+                }, 50);
+
+                // --- BOUNCE BACK PHYSICS ---
+                if (!containerRef.current) return;
+
+                const container = containerRef.current.getBoundingClientRect();
+                const itemWidth = item.width;
+                const itemHeight = typeof computedHeight === 'number' ? computedHeight : itemWidth; // Approximation if auto
+
+                // Calculate initial position in pixels
+                const initialLeft = (item.x / 100) * container.width;
+                const initialTop = (item.y / 100) * container.height;
+
+                // Calculate bounds for translation (x, y)
+                // We add a small margin so items can go slightly closer to the edge or off-screen before bouncing
+                const margin = -20;
+                const minX = -initialLeft - margin;
+                const maxX = container.width - itemWidth - initialLeft + margin;
+                const minY = -initialTop - margin;
+                const maxY = container.height - itemHeight - initialTop + margin;
+
+                // Physics constants
+                const power = 0.2; // How far it travels based on velocity
+                const bounceFactor = 0.5; // Energy kept after bounce (0.5 = 50%)
+
+
+                // Helper to calculate target with bounce
+                const calculateBounce = (current: number, velocity: number, min: number, max: number) => {
+                    const projected = current + velocity * power;
+                    if (projected < min) {
+                        const overshoot = min - projected;
+                        return min + overshoot * bounceFactor;
+                    } else if (projected > max) {
+                        const overshoot = projected - max;
+                        return max - overshoot * bounceFactor;
+                    }
+                    return projected;
+                };
+
+                const targetX = calculateBounce(x.get(), info.velocity.x, minX, maxX);
+                const targetY = calculateBounce(y.get(), info.velocity.y, minY, maxY);
+
+                animate(x, targetX, { type: "spring", stiffness: 200, damping: 20 });
+                animate(y, targetY, { type: "spring", stiffness: 200, damping: 20 });
+            }}
             onPointerDown={() => bringToFront(item.id)}
             style={{
                 position: 'absolute',
                 left: `${item.x}%`,
                 top: `${item.y}%`,
                 width: `${item.width}px`,
-                height: computedHeight !== 'auto' ? `${computedHeight}px` : 'auto'
+                height: computedHeight !== 'auto' ? `${computedHeight}px` : 'auto',
+                perspective: '1000px',
+                borderRadius: `${imageRadius}px`,
+                rotate: currentRotation, // Apply dynamic rotation here
+                x,
+                y, // Bind y motion value
             }}
             whileHover={!isExporting ? { scale: 1.015, cursor: 'grab', zIndex: 999 } : {}}
             whileDrag={{
                 scale: 1.15,
-                rotate: 5,
-                boxShadow: "0 40px 80px -20px rgba(0, 0, 0, 0.5)",
+                // rotate: 5, // REMOVED: Static rotation replaced by dynamic wiggle
+                boxShadow: `0 40px 80px -20px ${shadowColor}`,
                 cursor: 'grabbing',
                 zIndex: 9999
             }}
             className="absolute group"
         >
-            {showExplosion ? (
-                <ParticleExplosion imageSrc={item.content} />
+            {showDissolve ? (
+                <div className="absolute inset-0 z-50 overflow-hidden" style={{ borderRadius: `${imageRadius}px` }}>
+                    <DissolveEffect imageUrl={item.content} duration={2000} initialColor={shadowColor} />
+                </div>
             ) : (
                 <div className="relative w-full h-full">
                     {/* MAGICAL GLOW FOR NEW AI IMAGES */}
@@ -362,61 +788,119 @@ const BoardItem = React.forwardRef(({
                     )}
 
                     {item.isLoading ? (
-                        <div className="relative w-full h-full">
+                        <motion.div
+                            className="relative w-full h-full"
+                            animate={{
+                                y: [0, -15, 0],
+                                rotate: [0, 1, -1, 0],
+                                scale: [1, 1.02, 1],
+                            }}
+                            transition={{
+                                duration: 5,
+                                repeat: Infinity,
+                                ease: "easeInOut"
+                            }}
+                        >
                             {/* Outer Glow Effect */}
                             <div className="absolute -inset-8 opacity-60 blur-2xl z-0">
-                                <MeshGradient palette={['#C084FC', '#818CF8', '#F472B6']} speed={0.5} />
+                                <MeshGradient palette={['#FF9A9E', '#FECFEF', '#A18CD1']} speed={0.3} />
                             </div>
+
+
 
                             {/* Main Card */}
                             <div
-                                className="w-full h-full bg-white/20 flex flex-col items-center justify-center relative overflow-hidden border border-white/50 shadow-xl z-10"
+                                className="w-full h-full bg-white/30 flex flex-col items-center justify-center relative overflow-hidden border-[3px] border-white/20 shadow-xl z-10 backdrop-blur-md"
                                 style={{ borderRadius: `${imageRadius}px` }}
                             >
-                                <MeshGradient palette={['#C084FC', '#818CF8', '#F472B6']} speed={0.5} />
-                                <div className="absolute inset-0 backdrop-blur-[30px] z-0" />
+                                <MeshGradient palette={['#FF9A9E', '#FECFEF', '#A18CD1']} speed={0.3} />
+                                <div className="absolute inset-0 bg-white/10 backdrop-blur-[20px] z-0" />
 
-                                <Loader className="w-8 h-8 text-purple-900 animate-spin mb-3 relative z-10" />
+                                <Loader className="w-8 h-8 text-white animate-spin mb-3 relative z-10 drop-shadow-md" />
                                 <motion.span
-                                    animate={{ opacity: [0.4, 1, 0.4] }}
+                                    animate={{ opacity: [0.6, 1, 0.6] }}
                                     transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                                    className="text-xs text-purple-900 font-bold tracking-wide uppercase relative z-10"
+                                    className="text-xs text-white font-bold tracking-widest uppercase relative z-10 drop-shadow-sm"
                                 >
                                     Curating...
                                 </motion.span>
                             </div>
-                        </div>
-                    ) : item.type === 'image' ? (
-                        <div
-                            className={`transition-all w-full h-full ${showBorders ? 'bg-white p-[8px]' : ''}`}
-                            style={{
-                                borderRadius: `${imageRadius}px`,
-                                boxShadow: '0 12px 24px -8px rgba(0,0,0,0.25)'
+                        </motion.div>
+                    ) : (item.type === 'image' || item.type === 'video') ? (
+                        <FlippableImage
+                            item={item}
+                            isFlipped={isFlipped}
+                            isExporting={isExporting}
+                            onToggleFlip={(id: string) => {
+                                if (!isDraggingRef.current) {
+                                    onToggleFlip(id);
+                                }
                             }}
+                            showBorders={showBorders}
+                            imageRadius={imageRadius}
+                            borderThickness={borderThickness}
+                            boardTitle={boardTitle}
+                            boardAuthor={boardAuthor}
                         >
-                            <img
-                                src={item.content}
-                                className="pointer-events-none select-none object-cover w-full h-full block"
-                                style={{
-                                    borderRadius: showBorders ? `${Math.max(0, imageRadius - 6)}px` : `${imageRadius}px`,
-                                    objectFit: 'cover'
-                                }}
-                                crossOrigin="anonymous"
-                            />
                             {!isExporting && (
-                                <div
-                                    onPointerDown={(e) => handleResizeStart(e, item.id, item.width, item.aspectRatio)}
-                                    className="absolute bottom-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-ew-resize flex items-center justify-center transition-opacity z-50 hover:bg-white"
-                                >
-                                    <Scaling size={14} className="text-gray-600" />
-                                </div>
+                                <>
+                                    <div
+                                        onPointerDown={(e) => handleResizeStart(e, item.id, item.width, item.aspectRatio)}
+                                        className="absolute bottom-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-ew-resize flex items-center justify-center transition-opacity z-50 hover:bg-white"
+                                        onClick={(e) => e.stopPropagation()} // Prevent flip when resizing
+                                    >
+                                        <Scaling size={14} className="text-gray-600" />
+                                    </div>
+                                    <div
+                                        onPointerDown={(e) => handleRotateStart(e, item.id, item.rotation)}
+                                        className="absolute top-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-grab flex items-center justify-center transition-opacity z-50 hover:bg-white"
+                                        onClick={(e) => e.stopPropagation()} // Prevent flip when rotating
+                                    >
+                                        <RotateCw size={14} className="text-gray-600" />
+                                    </div>
+                                </>
                             )}
-                        </div>
+                        </FlippableImage>
+                    ) : item.type === 'audio' ? (
+                        <AudioPlayer
+                            src={item.content}
+                            fileName={item.author}
+                            imageRadius={imageRadius}
+                            className="w-full h-full"
+                        />
+                    ) : item.type === 'pdf' ? (
+                        <PDFFlipBook
+                            file={item.content}
+                            width={item.width}
+                            height={computedHeight}
+                            showBorders={showBorders}
+                            borderThickness={borderThickness}
+                            imageRadius={imageRadius}
+                        >
+                            {!isExporting && (
+                                <>
+                                    <div
+                                        onPointerDown={(e) => handleResizeStart(e, item.id, item.width, item.aspectRatio)}
+                                        className="absolute bottom-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-ew-resize flex items-center justify-center transition-opacity z-50 hover:bg-white"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <Scaling size={14} className="text-gray-600" />
+                                    </div>
+                                    <div
+                                        onPointerDown={(e) => handleRotateStart(e, item.id, item.rotation)}
+                                        className="absolute top-4 right-4 w-8 h-8 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow-lg opacity-0 group-hover:opacity-100 cursor-grab flex items-center justify-center transition-opacity z-50 hover:bg-white"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <RotateCw size={14} className="text-gray-600" />
+                                    </div>
+                                </>
+                            )}
+                        </PDFFlipBook>
                     ) : (
-                        <div className={`border border-white/60 p-6 shadow-xl w-full h-full ${isExporting ? 'bg-white/95' : 'bg-white/80 backdrop-blur-xl'}`}
+                        <div className={`border-[3px] border-white/20 p-6 shadow-xl w-full h-full ${isExporting ? 'bg-white/95' : 'bg-white/80 backdrop-blur-xl'}`}
                             style={{
                                 borderRadius: `${imageRadius}px`,
-                                boxShadow: '0 12px 24px -8px rgba(0,0,0,0.15)'
+                                boxShadow: '0 0 0 1px rgba(209, 213, 219, 0.6), 0 12px 24px -8px rgba(0,0,0,0.15)'
                             }}>
                             {isExporting ? (
                                 <>
@@ -452,12 +936,30 @@ const BoardItem = React.forwardRef(({
     );
 });
 
+
+
 const OrganicMoodboard = () => {
     // --- State ---
     const [items, setItems] = useState<BoardItem[]>([]);
     const [globalZIndex, setGlobalZIndex] = useState(10);
     const [layoutMode, setLayoutMode] = useState<'organic' | 'grid' | 'animate'>('organic');
     const [activeIndex, setActiveIndex] = useState(0);
+    const [flippedItems, setFlippedItems] = useState<Set<string>>(new Set()); // Track flipped items
+    const [isDockExpanded, setIsDockExpanded] = useState(true);
+    const [hasSeenTour, setHasSeenTour] = useState(false);
+    const [isDraggingOver, setIsDraggingOver] = useState(false); // Track drag over state
+
+    const toggleFlip = (id: string) => {
+        setFlippedItems(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) {
+                newSet.delete(id);
+            } else {
+                newSet.add(id);
+            }
+            return newSet;
+        });
+    };
     const [isPaused, setIsPaused] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
@@ -482,16 +984,23 @@ const OrganicMoodboard = () => {
         }
     }, [windowWidth]);
 
+    // View Mode State
+    const [viewMode, setViewMode] = useState<'editor' | 'community'>('editor');
+    const [currentBoardId, setCurrentBoardId] = useState<string | null>(null);
+
     // Style State
     const [dashboardRadius, setDashboardRadius] = useState(32);
     const [imageRadius, setImageRadius] = useState(12);
     const [background, setBackground] = useState('#FFFFFF');
-    const [bgMode, setBgMode] = useState<'solid' | 'gradient'>('gradient');
+    const [bgMode, setBgMode] = useState<'solid' | 'gradient' | 'shader'>('gradient');
 
     const [showBorders, setShowBorders] = useState(true);
+    const [borderThickness, setBorderThickness] = useState(10); // New state for border thickness
+    const [showGrid, setShowGrid] = useState(true); // New state for grid overlay (Default ON)
+    const [gridType, setGridType] = useState<'square' | 'dot'>('dot'); // New state for grid type (Default Dot)
     const [quoteSize, setQuoteSize] = useState(20);
 
-    const [smartGradient, setSmartGradient] = useState('');
+
     const [currentFontIndex, setCurrentFontIndex] = useState(0);
     const [showSettings, setShowSettings] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -500,8 +1009,15 @@ const OrganicMoodboard = () => {
     const [isGeneratingDescription, setIsGeneratingDescription] = useState(false); // New state
     const [resizingId, setResizingId] = useState<string | null>(null);
 
+
     // Magical Effect State
     const [magicalItems, setMagicalItems] = useState<string[]>([]);
+    const [isShaderMode, setIsShaderMode] = useState(false); // New state for Shader Mode
+    const [activeShaderColors, setActiveShaderColors] = useState<string[]>([]); // New state for reactive borders
+    const [enableMotionBlur, setEnableMotionBlur] = useState(false); // New state for motion blur
+    const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.5); // New state for motion blur intensity
+    const [shaderMode, setShaderMode] = useState<'soft' | 'extreme'>('soft'); // New state for shader mode
+    const [shaderItemId, setShaderItemId] = useState<string | null>(null); // Track specific item for shader background
 
     // Sidebar
     const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
@@ -517,102 +1033,120 @@ const OrganicMoodboard = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // --- ANIMATION LOOP ---
+    // --- AUTO-PLAY FOR SHOW MODE ---
     useEffect(() => {
         let interval: any;
-        if (layoutMode === 'animate' && items.length > 0 && !isPaused) {
+        if (layoutMode === 'animate' && !isPaused && items.length > 0) {
             interval = setInterval(() => {
                 setActiveIndex((prev) => (prev + 1) % items.length);
-            }, 3000);
+            }, 6000); // Updated to 6 seconds for Shader Mode
         }
         return () => clearInterval(interval);
-    }, [layoutMode, items.length, isPaused]);
+    }, [layoutMode, isPaused, items.length]);
 
-    // --- SHOW MODE VARIANTS ---
-    const showVariants: Variants = {
-        enter: {
-            rotateX: -60,
-            y: 80,
-            opacity: 0,
-            scale: 0.9
-        },
-        center: {
-            rotateX: 0,
-            y: 0,
-            opacity: 1,
-            scale: 1,
-            zIndex: 1,
-            transition: {
-                duration: 0.8,
-                ease: "easeOut"
-            }
-        },
-        exit: {
-            rotateX: 60,
-            y: -80,
-            opacity: 0,
-            scale: 0.9,
-            zIndex: 0,
-            transition: {
-                duration: 0.6,
-                ease: "easeIn"
-            }
-        }
-    };
+
 
     // --- Helpers ---
 
 
     const updatePaletteFromAllImages = (newImageUrls: string[] = [], randomize: boolean = false) => {
-        const currentUrls = items.filter(i => i.type === 'image').map(i => i.content);
-        const allUrls = [...currentUrls, ...newImageUrls];
+        // Collect candidates (Images and Videos)
+        const currentCandidates = items
+            .filter(i => i.type === 'image' || i.type === 'video')
+            .map(i => ({ url: i.content, type: i.type }));
 
-        if (allUrls.length === 0) return;
+        const newCandidates = newImageUrls.map(url => ({
+            url,
+            type: (url.match(/\.(mp4|webm|mov)$/i)) ? 'video' : 'image'
+        }));
+
+        const allCandidates = [...currentCandidates, ...newCandidates];
+
+        if (allCandidates.length === 0) return;
 
         const collectedColors: string[] = [];
-        const samplesPerImage = Math.ceil(6 / Math.min(allUrls.length, 6));
+        const samplesPerImage = Math.ceil(6 / Math.min(allCandidates.length, 6));
         let processed = 0;
 
-        let urlsToScan: string[] = [];
+        let candidatesToScan: { url: string, type: string }[] = [];
         if (randomize) {
-            // Pick 6 random images
-            const shuffled = [...allUrls].sort(() => 0.5 - Math.random());
-            urlsToScan = shuffled.slice(0, 6);
+            const shuffled = [...allCandidates].sort(() => 0.5 - Math.random());
+            candidatesToScan = shuffled.slice(0, 6);
         } else {
-            // Pick last 6 images
-            urlsToScan = allUrls.slice(-6);
+            candidatesToScan = allCandidates.slice(-6);
         }
 
-        urlsToScan.forEach(url => {
-            const img = new Image();
-            img.src = url;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return;
-
-                canvas.width = 50; canvas.height = 50;
-                ctx.drawImage(img, 0, 0, 50, 50);
-
-                const samplePoints = [[25, 25], [10, 10], [40, 40], [25, 10], [25, 40]];
-
-                for (let i = 0; i < samplesPerImage; i++) {
-                    if (collectedColors.length >= 6) break;
-                    const pt = samplePoints[i % samplePoints.length];
+        const extractColorsFromCanvas = (ctx: CanvasRenderingContext2D) => {
+            const samplePoints = [[25, 25], [10, 10], [40, 40], [25, 10], [25, 40]];
+            for (let i = 0; i < samplesPerImage; i++) {
+                if (collectedColors.length >= 6) break;
+                const pt = samplePoints[i % samplePoints.length];
+                try {
                     const p = ctx.getImageData(pt[0], pt[1], 1, 1).data;
-                    if (p[0] > 245 && p[1] > 245 && p[2] > 245) continue;
-                    if (p[0] < 15 && p[1] < 15 && p[2] < 15) continue;
+                    if (p[0] > 245 && p[1] > 245 && p[2] > 245) continue; // Skip white
+                    if (p[0] < 15 && p[1] < 15 && p[2] < 15) continue; // Skip black
                     collectedColors.push(`rgb(${p[0]}, ${p[1]}, ${p[2]})`);
-                }
+                } catch (e) { console.warn("Canvas read error", e); }
+            }
+        };
 
-                processed++;
-                if (processed === urlsToScan.length) {
-                    while (collectedColors.length < 6) collectedColors.push('#E5E7EB');
-                    setPalette(collectedColors);
-                    const gradient = `linear-gradient(135deg, ${collectedColors[0]} 0%, ${collectedColors[1]} 100%)`;
-                    setSmartGradient(gradient);
-                    if (bgMode === 'gradient') setBackground(gradient);
+        const finish = () => {
+            processed++;
+            if (processed === candidatesToScan.length) {
+                while (collectedColors.length < 6) collectedColors.push('#E5E7EB');
+                setPalette(collectedColors);
+                const gradient = `linear-gradient(135deg, ${collectedColors[0]} 0%, ${collectedColors[1]} 100%)`;
+
+                if (bgMode === 'gradient') setBackground(gradient);
+            }
+        };
+
+        candidatesToScan.forEach(candidate => {
+            if (candidate.type === 'video') {
+                const video = document.createElement('video');
+                video.crossOrigin = "Anonymous";
+                video.src = candidate.url;
+                video.muted = true;
+                video.playsInline = true;
+
+                // Trigger seek to capture a frame
+                video.onloadeddata = () => {
+                    video.currentTime = 0.5; // Capture frame at 0.5s
+                };
+
+                video.onseeked = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 50; canvas.height = 50;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.drawImage(video, 0, 0, 50, 50);
+                        extractColorsFromCanvas(ctx);
+                    }
+                    finish();
+                };
+
+                video.onerror = () => {
+                    console.warn("Could not load video for palette extraction:", candidate.url);
+                    finish();
+                };
+
+                // Force load
+                video.load();
+            } else {
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.src = candidate.url;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) { finish(); return; }
+
+                    canvas.width = 50; canvas.height = 50;
+                    ctx.drawImage(img, 0, 0, 50, 50);
+                    extractColorsFromCanvas(ctx);
+                    finish();
                 }
+                img.onerror = () => finish();
             }
         });
     };
@@ -637,14 +1171,14 @@ const OrganicMoodboard = () => {
         return {
             x: safeX(baseX + jitterX),
             y: safeY(baseY + jitterY),
-            rotation: (Math.random() * 12) - 6,
+            rotation: 0, // Default to 0 rotation
             heightPercent: undefined,
             scale: 1,
             opacity: 1
         };
     };
 
-    const getGridPos = (index: number, totalCount: number) => {
+    const getGridPos = (index: number) => {
         const cols = windowWidth < 640 ? 2 : windowWidth < 1024 ? 3 : 5;
         // const rows = Math.ceil(totalCount / cols); // Unused
         const gap = 3;
@@ -668,20 +1202,18 @@ const OrganicMoodboard = () => {
         };
     };
 
-    const getSmartPos = (index: number, totalCount: number, mode = layoutMode) => {
+    const getSmartPos = (index: number, mode = layoutMode) => {
         if (mode === 'organic') return { ...getOrganicPos(index), widthPercent: 20, heightPercent: undefined };
-        return getGridPos(index, totalCount);
+        return getGridPos(index);
     };
 
     // --- HANDLERS ---
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files) return;
+    const processFiles = (files: FileList | File[]) => {
+        if (!files || files.length === 0) return;
         setIsLoading(true);
         const filesToProcess = Array.from(files).slice(0, 10);
-        const newItems: BoardItem[] = [];
+
         const newUrls: string[] = [];
-        const predictedTotal = items.length + filesToProcess.length;
         // Fallback to window dimensions if container is hidden (e.g. behind sidebar on mobile)
         const containerWidth = (containerRef.current?.clientWidth || 0) > 0
             ? containerRef.current!.clientWidth
@@ -690,47 +1222,262 @@ const OrganicMoodboard = () => {
             ? containerRef.current!.clientHeight
             : window.innerHeight;
 
-        const imagePromises = filesToProcess.map((file, i) => {
-            return new Promise<void>((resolve) => {
-                const url = URL.createObjectURL(file);
-                newUrls.push(url);
-                const img = new Image();
-                img.src = url;
-                img.onload = () => {
-                    const aspectRatio = img.naturalHeight / img.naturalWidth;
-                    const gridData = getSmartPos(items.length + i, predictedTotal, layoutMode);
-                    const pixelWidth = (gridData.widthPercent / 100) * containerWidth;
-                    const pixelHeight = gridData.heightPercent ? (gridData.heightPercent / 100) * containerHeight : undefined;
-                    newItems.push({
+        const itemPromises = filesToProcess.map((file, i) => {
+            return new Promise<BoardItem | null>((resolve) => {
+                const gridData = getSmartPos(items.length + i, layoutMode);
+                const pixelWidth = (gridData.widthPercent / 100) * containerWidth;
+                const pixelHeight = gridData.heightPercent ? (gridData.heightPercent / 100) * containerHeight : undefined;
+
+                if (file.type.startsWith('image/')) {
+                    const url = URL.createObjectURL(file);
+                    newUrls.push(url);
+                    const img = new Image();
+                    img.src = url;
+                    img.onload = () => {
+                        const aspectRatio = img.naturalHeight / img.naturalWidth;
+                        resolve({
+                            id: Math.random().toString(36).substr(2, 9),
+                            type: 'image',
+                            content: url,
+                            x: gridData.x,
+                            y: gridData.y,
+                            rotation: gridData.rotation,
+                            zIndex: globalZIndex + 1 + i,
+                            width: pixelWidth,
+                            height: pixelHeight,
+                            aspectRatio: aspectRatio
+                        });
+                    };
+                    img.onerror = () => resolve(null);
+                } else if (file.type.startsWith('video/')) {
+                    const url = URL.createObjectURL(file);
+                    const video = document.createElement('video');
+                    video.src = url;
+                    video.onloadedmetadata = () => {
+                        const aspectRatio = video.videoHeight / video.videoWidth;
+                        resolve({
+                            id: Math.random().toString(36).substr(2, 9),
+                            type: 'video',
+                            content: url,
+                            x: gridData.x,
+                            y: gridData.y,
+                            rotation: gridData.rotation,
+                            zIndex: globalZIndex + 1 + i,
+                            width: pixelWidth,
+                            height: pixelHeight,
+                            aspectRatio: aspectRatio
+                        });
+                    };
+                    video.onerror = () => resolve(null);
+                } else if (file.type.startsWith('audio/')) {
+                    const url = URL.createObjectURL(file);
+                    resolve({
                         id: Math.random().toString(36).substr(2, 9),
-                        type: 'image',
+                        type: 'audio',
                         content: url,
+                        author: file.name,
                         x: gridData.x,
                         y: gridData.y,
                         rotation: gridData.rotation,
                         zIndex: globalZIndex + 1 + i,
-                        width: pixelWidth,
-                        height: pixelHeight,
-                        aspectRatio: aspectRatio
+                        width: 320,
+                        height: 80,
+                        aspectRatio: undefined
                     });
-                    resolve();
-                };
-                img.onerror = () => resolve();
+                } else if (file.type === 'application/pdf') {
+                    const url = URL.createObjectURL(file);
+
+                    // Use pdfjs to detect dimensions
+                    pdfjs.getDocument(url).promise.then(pdf => {
+                        pdf.getPage(1).then(page => {
+                            const viewport = page.getViewport({ scale: 1 });
+                            const aspectRatio = viewport.height / viewport.width;
+
+                            resolve({
+                                id: Math.random().toString(36).substr(2, 9),
+                                type: 'pdf',
+                                content: url, // Use URL instead of base64 for better performance with react-pdf
+                                x: gridData.x,
+                                y: gridData.y,
+                                rotation: gridData.rotation,
+                                zIndex: globalZIndex + 1 + i,
+                                width: 300,
+                                height: undefined, // Let computedHeight handle it based on aspectRatio
+                                aspectRatio: aspectRatio,
+                                manualWidth: 300
+                            });
+                        }).catch(err => {
+                            console.error("Error getting PDF page", err);
+                            // Fallback
+                            resolve({
+                                id: Math.random().toString(36).substr(2, 9),
+                                type: 'pdf',
+                                content: url,
+                                x: gridData.x,
+                                y: gridData.y,
+                                rotation: gridData.rotation,
+                                zIndex: globalZIndex + 1 + i,
+                                width: 300,
+                                height: 420,
+                                aspectRatio: 1.414,
+                                manualWidth: 300
+                            });
+                        });
+                    }).catch(err => {
+                        console.error("Error loading PDF", err);
+                        // Fallback
+                        resolve({
+                            id: Math.random().toString(36).substr(2, 9),
+                            type: 'pdf',
+                            content: url,
+                            x: gridData.x,
+                            y: gridData.y,
+                            rotation: gridData.rotation,
+                            zIndex: globalZIndex + 1 + i,
+                            width: 300,
+                            height: 420,
+                            aspectRatio: 1.414,
+                            manualWidth: 300
+                        });
+                    });
+                } else {
+                    resolve(null);
+                }
             });
         });
 
         Promise.all([
-            Promise.all(imagePromises),
+            Promise.all(itemPromises.map(p => p.catch(e => { console.error("File processing error:", e); return null; }))),
             new Promise(resolve => setTimeout(resolve, 2000))
-        ]).then(() => {
-            setGlobalZIndex(prev => prev + newItems.length);
-            const updatedItems = [...items, ...newItems];
+        ]).then(([resolvedItems]) => {
+            const validItems = resolvedItems.filter(item => item !== null) as BoardItem[];
+            setGlobalZIndex(prev => prev + validItems.length);
+            const updatedItems = [...items, ...validItems];
             setItems(updatedItems);
             updatePaletteFromAllImages(newUrls);
             if (layoutMode === 'grid') reLayoutGrid(updatedItems);
             setIsLoading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         });
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files) return;
+        processFiles(files);
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            processFiles(files);
+        }
+    };
+
+    const handleSaveToCommunity = async () => {
+        setIsExporting(true); // Hide UI controls
+        // Wait for UI to hide
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        try {
+            const element = document.getElementById('moodboard-canvas');
+            if (!element) throw new Error("Canvas not found");
+
+            const canvas = await html2canvas(element, {
+                scale: 0.5, // Smaller scale for thumbnail
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: bgMode === 'solid' ? background : null, // Handle transparency
+                logging: false
+            });
+            const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
+
+            const newBoard: SavedMoodboard = {
+                id: currentBoardId || Math.random().toString(36).substr(2, 9),
+                title: title || "Untitled Board",
+                author: author || "Anonymous",
+                timestamp: Date.now(),
+                thumbnail,
+                items,
+                settings: {
+                    palette,
+                    background,
+                    bgMode,
+                    shaderMode,
+                    layoutMode,
+                    imageRadius,
+                    borderThickness,
+                    showBorders,
+                    showGrid,
+                    gridType,
+                    quoteSize,
+                    enableMotionBlur,
+                    motionBlurIntensity,
+                    shaderItemId
+                }
+            };
+
+            saveBoard(newBoard);
+            setCurrentBoardId(newBoard.id);
+            // alert("Saved to Community!"); // Optional feedback
+            setViewMode('community');
+        } catch (error) {
+            console.error("Save failed", error);
+            alert("Failed to save to community.");
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleLoadBoard = (board: SavedMoodboard) => {
+        setItems(board.items);
+        setTitle(board.title);
+        setAuthor(board.author);
+        if (board.settings) {
+            setPalette(board.settings.palette || []);
+            setBackground(board.settings.background || '#FFFFFF');
+            setBgMode(board.settings.bgMode || 'gradient');
+            setShaderMode(board.settings.shaderMode || 'soft');
+            // setLayoutMode(board.settings.layoutMode || 'organic'); // Keep current layout or load? User might prefer exploring. Let's load it.
+            // Actually, keep it flexible.
+            if (board.settings.layoutMode) setLayoutMode(board.settings.layoutMode);
+
+            setImageRadius(board.settings.imageRadius ?? 12);
+            setBorderThickness(board.settings.borderThickness ?? 10);
+            setShowBorders(board.settings.showBorders ?? true);
+            setShowGrid(board.settings.showGrid ?? true);
+            setGridType(board.settings.gridType || 'dot');
+            setQuoteSize(board.settings.quoteSize ?? 20);
+            setEnableMotionBlur(board.settings.enableMotionBlur ?? false);
+            setMotionBlurIntensity(board.settings.motionBlurIntensity ?? 0.5);
+            setShaderItemId(board.settings.shaderItemId || null);
+        }
+
+        setCurrentBoardId(board.id);
+        setViewMode('editor');
+    };
+
+    const handleCreateNew = () => {
+        setItems([]);
+        setTitle('');
+        setAuthor('');
+        setCurrentBoardId(null);
+        setViewMode('editor');
     };
 
     const handleAiGenerate = async () => {
@@ -745,10 +1492,7 @@ const OrganicMoodboard = () => {
 
         setIsGeneratingAI(true);
 
-        // 1. Create Placeholder Item
-        const predictedTotal = items.length + 1;
-        // const gridData = getSmartPos(items.length, predictedTotal, layoutMode); // Unused
-        // const containerWidth = containerRef.current?.clientWidth || 1200; // Unused
+
         const newId = Math.random().toString(36).substr(2, 9);
 
         const placeholderItem: BoardItem = {
@@ -778,7 +1522,8 @@ const OrganicMoodboard = () => {
                     return {
                         ...item,
                         content: generatedImage,
-                        isLoading: false
+                        isLoading: false,
+                        isGenerated: true // Mark as generated
                     };
                 }
                 return item;
@@ -796,9 +1541,8 @@ const OrganicMoodboard = () => {
                 // We need to wait a tick for state update or just pass the new list
                 // For simplicity, we'll just trigger a re-layout effect or let the next render handle it
                 // But since reLayoutGrid uses 'items' state, we might need to pass the new list manually if we want instant update
-                // However, since we just updated state, the effect might not catch it immediately if we call reLayoutGrid(items)
                 // So we construct the new list manually for reLayoutGrid
-                const updatedList = [...items, { ...placeholderItem, content: generatedImage, isLoading: false }];
+                const updatedList = [...items, { ...placeholderItem, content: generatedImage, isLoading: false, isGenerated: true }];
                 reLayoutGrid(updatedList);
             }
         } else {
@@ -832,8 +1576,8 @@ const OrganicMoodboard = () => {
     };
 
     const addQuote = () => {
-        const predictedTotal = items.length + 1;
-        const gridData = getSmartPos(items.length, predictedTotal, layoutMode);
+
+        const gridData = getSmartPos(items.length, layoutMode);
         // Fallback to window dimensions
         const containerWidth = (containerRef.current?.clientWidth || 0) > 0
             ? containerRef.current!.clientWidth
@@ -866,7 +1610,6 @@ const OrganicMoodboard = () => {
     };
 
     const reLayoutGrid = (currentItems: BoardItem[]) => {
-        const total = currentItems.length;
         // Fallback to window dimensions
         const containerWidth = (containerRef.current?.clientWidth || 0) > 0
             ? containerRef.current!.clientWidth
@@ -874,46 +1617,96 @@ const OrganicMoodboard = () => {
         const containerHeight = (containerRef.current?.clientHeight || 0) > 0
             ? containerRef.current!.clientHeight
             : window.innerHeight;
+
+        const cols = windowWidth < 640 ? 2 : windowWidth < 1024 ? 3 : 5;
+        const gap = 3; // % horizontal gap
+        const cellWidth = (90 - (gap * (cols - 1))) / cols; // %
+
+        // Calculate gap in pixels based on container width to insure uniform spacing
+        const gapPx = (gap / 100) * containerWidth;
+        const gapVerticalPercent = (gapPx / containerHeight) * 100;
+
+        // Track height of each column in %
+        // Start Y at 10%
+        const colHeights = new Array(cols).fill(10);
+
+        // Calculate centered start X
+        const gridTotalWidth = (cols * cellWidth) + ((cols - 1) * gap);
+        const startX = (100 - gridTotalWidth) / 2;
+
         setItems(currentItems.map((item, index) => {
-            const pos = getGridPos(index, total);
+            const col = index % cols;
+            const x = startX + (col * (cellWidth + gap));
+            const y = colHeights[col];
+
+            // Calculate pixel dimensions
+            const widthPx = (cellWidth / 100) * containerWidth;
+            let heightPx = item.height || widthPx; // Default fallback
+
+            // Calculate height based on aspect ratio if available
+            // For images/videos/pdfs, we prioritize aspect ratio to maintain original visuals
+            if ((item.type === 'image' || item.type === 'video' || item.type === 'pdf') && item.aspectRatio) {
+                heightPx = widthPx * item.aspectRatio;
+            } else if (item.aspectRatio) {
+                // For other items with aspect ratio (like text maybe?)
+                heightPx = widthPx * item.aspectRatio;
+            } else if (item.type === 'text') {
+                // Estimate text height logic or keep existing
+                // Text items usually benefit from their own height, but in grid we width-constrain them.
+                // We'll let them keep their current height if it seems reasonable, or recalculate.
+                // Ideally text height adjusts to content. 
+                // For now, let's trust the item's stored height or a default approximation.
+                // But if width changes, height should change. Text reflows.
+                // This is hard to calculate exactly without DOM.
+                // We'll approximate or assume the user has resized it if it was manual.
+                // If it's a new item, it might be tricky.
+                // Let's use a safe fallback.
+                if (!item.height) heightPx = widthPx * 0.6; // Default aspect for text
+            }
+
+            const heightPercent = (heightPx / containerHeight) * 100;
+
+            // Update column height for next item in this column
+            colHeights[col] += heightPercent + gapVerticalPercent;
+
             return {
                 ...item,
-                x: pos.x,
-                y: pos.y,
+                x,
+                y,
                 rotation: 0,
-                width: (pos.widthPercent / 100) * containerWidth,
-                height: (pos.heightPercent! / 100) * containerHeight
+                width: widthPx,
+                height: heightPx
             };
         }));
     };
 
     const toggleLayoutMode = (mode: 'organic' | 'grid' | 'animate') => {
+        // FIX: Allow clicking same mode to re-shuffle layout
+        // if (layoutMode === mode) return; 
+
         setLayoutMode(mode);
-        if (mode === 'animate') setActiveIndex(0);
+        if (mode === 'animate') {
+            setActiveIndex(0);
+            setIsSidebarOpen(false);
+            return;
+        }
 
-        setItems(prev => {
-            const shuffledItems = (mode === 'organic' || mode === 'grid') ? [...prev].sort(() => Math.random() - 0.5) : prev;
-            const total = shuffledItems.length;
-            // Fallback to window dimensions
-            const containerWidth = (containerRef.current?.clientWidth || 0) > 0
-                ? containerRef.current!.clientWidth
-                : window.innerWidth;
-            const containerHeight = (containerRef.current?.clientHeight || 0) > 0
-                ? containerRef.current!.clientHeight
-                : window.innerHeight;
+        // Stabilize shader before shuffling if not set
+        if (!shaderItemId && items.length > 0) {
+            setShaderItemId(items[0].id);
+        }
 
-            return shuffledItems.map((item, index) => {
-                if (mode === 'grid') {
-                    const pos = getGridPos(index, total);
-                    return { ...item, ...pos, width: (pos.widthPercent / 100) * containerWidth, height: (pos.heightPercent! / 100) * containerHeight };
-                } else if (mode === 'organic') {
-                    const pos = getOrganicPos(index);
-                    return { ...item, ...pos, width: item.manualWidth || 220, height: undefined };
-                } else {
-                    return item;
-                }
-            });
-        });
+        // Shuffle items for variety
+        const itemsToLayout = [...items].sort(() => Math.random() - 0.5);
+
+        if (mode === 'grid') {
+            reLayoutGrid(itemsToLayout);
+        } else if (mode === 'organic') {
+            setItems(itemsToLayout.map((item, index) => {
+                const pos = getOrganicPos(index);
+                return { ...item, ...pos, width: item.manualWidth || 220, height: undefined };
+            }));
+        }
     };
 
     const cycleFonts = () => {
@@ -934,6 +1727,46 @@ const OrganicMoodboard = () => {
         if (layoutMode === 'grid') reLayoutGrid(updated);
     };
 
+    const handleRotateStart = (e: React.PointerEvent, id: string, initialRotation: number) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+
+        const item = items.find(i => i.id === id);
+        if (!item) return;
+
+        // Calculate center of the item
+        const rect = (e.target as HTMLElement).closest('.group')?.getBoundingClientRect();
+        if (!rect) return;
+
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+        const baseRotation = initialRotation;
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const currentAngle = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX) * (180 / Math.PI);
+            const deltaAngle = currentAngle - startAngle;
+
+            setItems(prev => prev.map(item => {
+                if (item.id === id) {
+                    return { ...item, rotation: baseRotation + deltaAngle };
+                }
+                return item;
+            }));
+        };
+
+        const onPointerUp = () => {
+
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+    };
+
     const handleResizeStart = (e: React.PointerEvent, id: string, initialWidth: number, aspectRatio?: number) => {
         e.stopPropagation();
         e.preventDefault();
@@ -944,7 +1777,7 @@ const OrganicMoodboard = () => {
             const newWidth = Math.max(100, initialWidth + deltaX);
             setItems(prev => prev.map(item => {
                 if (item.id === id) {
-                    const newHeight = item.type === 'image' && aspectRatio ? newWidth * aspectRatio : item.height;
+                    const newHeight = (item.type === 'image' || item.type === 'video') && aspectRatio ? newWidth * aspectRatio : item.height;
                     return { ...item, width: newWidth, height: newHeight, manualWidth: newWidth };
                 }
                 return item;
@@ -968,29 +1801,7 @@ const OrganicMoodboard = () => {
         }));
     };
 
-    const handleExport = async () => {
-        if (!exportWrapperRef.current) return;
-        setIsExporting(true);
-        setTimeout(async () => {
-            try {
-                const canvas = await html2canvas(exportWrapperRef.current!, {
-                    scale: 3,
-                    backgroundColor: null,
-                    ignoreElements: (element) => element.id === 'dock-controls' || element.id === 'sidebar-toggle',
-                    useCORS: true,
-                    logging: false,
-                });
-                const link = document.createElement("a");
-                link.href = canvas.toDataURL("image/png");
-                link.download = `moodboard-${layoutMode}.png`;
-                link.click();
-            } catch (e) {
-                console.error("Export failed", e);
-            } finally {
-                setIsExporting(false);
-            }
-        }, 500);
-    };
+
 
     const handleTourStepChange = (step: number) => {
         // Only automate sidebar on mobile
@@ -1008,30 +1819,106 @@ const OrganicMoodboard = () => {
         }
     };
 
+    // --- BACKGROUND SHUFFLE FOR SHOW MODE ---
+    useEffect(() => {
+        let interval: any;
+        if (layoutMode === 'animate' && !isPaused) {
+            // REMOVED initial shuffle to maintain continuity
+
+            // Shuffle every 8 seconds
+            interval = setInterval(() => {
+                updatePaletteFromAllImages([], true);
+            }, 8000);
+        }
+        return () => clearInterval(interval);
+    }, [layoutMode, isPaused, items]);
+
     return (
-        <div className="flex items-center justify-center w-full h-screen bg-[#E5E5EA] overflow-hidden font-sans text-[#1D1D1F]"
-            style={{ fontFamily: FONTS[currentFontIndex].family }}>
+        <div
+            className="flex items-center justify-center w-full h-screen bg-[#E5E5EA] overflow-hidden font-sans text-[#1D1D1F] relative"
+            style={{ fontFamily: FONTS[currentFontIndex].family }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
+            {/* Drag Overlay */}
+            <AnimatePresence>
+                {isDraggingOver && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-[9999] bg-black/20 backdrop-blur-sm flex items-center justify-center pointer-events-none"
+                    >
+                        <div className="bg-white/90 backdrop-blur-xl p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 transform scale-110">
+                            <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center text-blue-500">
+                                <FileImage size={40} />
+                            </div>
+                            <h3 className="text-2xl font-bold text-gray-800">Drop files here</h3>
+                            <p className="text-gray-500 font-medium">Add images, videos, audio, or PDFs</p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <Styles />
 
-            <div ref={exportWrapperRef} className="p-0 md:p-12 w-full h-full flex items-center justify-center">
+            <div ref={exportWrapperRef} className={`w-full h-full flex items-center justify-center ${layoutMode === 'animate' ? 'p-0' : 'p-0 md:p-12'}`}>
 
                 <div
-                    className="relative w-full h-full max-w-[1800px] md:aspect-[16/10] shadow-2xl overflow-hidden flex flex-row transition-all duration-500"
+                    id="moodboard-canvas"
+                    className={`relative w-full h-full shadow-2xl overflow-hidden flex flex-row transition-all duration-500 ${layoutMode === 'animate' ? '' : 'max-w-[1800px] md:aspect-[16/10]'}`}
                     style={{
+                        // Reverted to simple background logic (MeshGradient handles gradient mode)
                         background: bgMode === 'solid' ? background : '#FFFFFF',
-                        borderRadius: windowWidth < 768 ? '0px' : `${dashboardRadius}px`
+                        borderRadius: (windowWidth < 768 || layoutMode === 'animate') ? '0px' : `${dashboardRadius}px`
                     }}
                 >
                     <AnimatePresence mode='popLayout'>
+                        {/* Restore MeshGradient in Show mode */}
                         {bgMode === 'gradient' && !isExporting && (
-                            <motion.div key="mesh" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-0">
+                            <motion.div
+                                key="mesh"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="absolute inset-0 z-0"
+                                style={{
+                                    maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)',
+                                    WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)'
+                                }}
+                            >
                                 <MeshGradient palette={palette} />
                             </motion.div>
                         )}
                         {bgMode === 'gradient' && isExporting && (
                             <div className="absolute inset-0 z-0 opacity-30" style={{ background: `radial-gradient(circle at 20% 20%, ${palette[0]} 0%, transparent 50%), radial-gradient(circle at 80% 80%, ${palette[1]} 0%, transparent 50%), radial-gradient(circle at 50% 50%, ${palette[2]} 0%, transparent 50%)` }} />
                         )}
+
+                        {/* --- SOFT GRID OVERLAY --- */}
+                        {/* --- SOFT GRID OVERLAY --- */}
+                        {showGrid && (
+                            <div className="absolute inset-0 z-0 pointer-events-none opacity-30"
+                                style={{
+                                    maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)',
+                                    WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)'
+                                }}
+                            >
+                                <div
+                                    className="absolute inset-0"
+                                    style={{
+                                        backgroundImage: gridType === 'square' ? `
+                                            linear-gradient(to right, rgba(0,0,0,0.15) 1px, transparent 1px),
+                                            linear-gradient(to bottom, rgba(0,0,0,0.15) 1px, transparent 1px)
+                                        ` : `
+                                            radial-gradient(circle, rgba(0,0,0,0.3) 2px, transparent 2px)
+                                        `,
+                                        backgroundSize: '40px 40px'
+                                    }}
+                                />
+                            </div>
+                        )}
+
                         {bgMode === 'solid' && background !== '#FFFFFF' && (
                             <motion.div key="solid" initial={{ opacity: 0 }} animate={{ opacity: 0.3 }} exit={{ opacity: 0 }} className="absolute inset-0 z-0" style={{ backgroundColor: background }} />
                         )}
@@ -1073,9 +1960,9 @@ const OrganicMoodboard = () => {
                                 </div>
                                 <div className="mb-8">
                                     {isExporting ? (
-                                        <div className="text-3xl font-semibold tracking-tight text-gray-900 w-full mb-2 leading-tight">{title || "Visual Exploration 01"}</div>
+                                        <div className="text-3xl font-normal tracking-tight text-gray-900 w-full mb-2 leading-tight">{title || "Visual Exploration 01"}</div>
                                     ) : (
-                                        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Visual Exploration 01" className="text-3xl font-semibold tracking-tight text-gray-900 bg-transparent border-none outline-none focus:ring-0 placeholder:text-gray-400/50 w-full mb-2 leading-tight" />
+                                        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Visual Exploration 01" className="text-3xl font-normal tracking-tight text-gray-900 bg-transparent border-none outline-none focus:ring-0 placeholder:text-gray-400/50 w-full mb-2 leading-tight" />
                                     )}
                                     <div className="flex items-center gap-2 text-xs text-gray-500">
                                         <span className="font-medium uppercase tracking-wide opacity-50">By</span>
@@ -1088,7 +1975,7 @@ const OrganicMoodboard = () => {
                                 </div>
                                 <div className="mb-8 flex-1">
                                     <div className="flex items-center justify-between mb-3">
-                                        <h3 className="text-[9px] font-bold text-gray-500 uppercase tracking-widest opacity-60">Description</h3>
+                                        <h3 className="text-[11px] font-medium text-gray-500 tracking-wide opacity-60" style={{ fontFamily: "'Public Sans', sans-serif" }}>Description</h3>
                                         {!isExporting && (
                                             <button
                                                 id="tour-ai-desc" // Tour Target
@@ -1102,7 +1989,7 @@ const OrganicMoodboard = () => {
                                         )}
                                     </div>
                                     {isExporting ? (
-                                        <div className="w-full h-full text-lg font-medium text-gray-800 leading-relaxed whitespace-pre-wrap">{aboutText || "A curated collection exploring nature and technology."}</div>
+                                        <div className="w-full h-full text-lg font-normal text-gray-800 leading-relaxed whitespace-pre-wrap">{aboutText || "A curated collection exploring nature and technology."}</div>
                                     ) : isGeneratingDescription ? (
                                         <div className="w-full h-full flex flex-col justify-center space-y-2 animate-pulse">
                                             <div className="h-4 bg-gray-200 rounded w-3/4"></div>
@@ -1110,11 +1997,11 @@ const OrganicMoodboard = () => {
                                             <div className="h-4 bg-gray-200 rounded w-5/6"></div>
                                         </div>
                                     ) : (
-                                        <textarea value={aboutText} onChange={(e) => setAboutText(e.target.value)} placeholder="A curated collection exploring nature and technology." className="w-full h-full text-lg font-medium text-gray-800 leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-0 placeholder:text-gray-400/50" />
+                                        <textarea value={aboutText} onChange={(e) => setAboutText(e.target.value)} placeholder="A curated collection exploring nature and technology." className="w-full h-full text-lg font-normal text-gray-800 leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-0 placeholder:text-gray-400/50" />
                                     )}
                                 </div>
                                 <div className="mb-8">
-                                    <h3 className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-3 opacity-60">Keywords</h3>
+                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Public Sans', sans-serif" }}>Keywords</h3>
                                     <div className="flex flex-wrap gap-2">
                                         {tags.map((tag, i) => (
                                             isExporting ? (
@@ -1126,7 +2013,7 @@ const OrganicMoodboard = () => {
                                     </div>
                                 </div>
                                 <div className="mt-auto">
-                                    <h3 className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-3 opacity-60">Palette</h3>
+                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Public Sans', sans-serif" }}>Palette</h3>
                                     <div className="grid grid-cols-3 gap-2">
                                         {palette.map((color, i) => (
                                             <div
@@ -1148,219 +2035,525 @@ const OrganicMoodboard = () => {
                     </AnimatePresence>
 
                     {/* --- RIGHT CANVAS --- */}
-                    <div id="moodboard-canvas" ref={containerRef} className={`flex-1 h-full relative z-10 scroll-smooth custom-scrollbar ${layoutMode === 'grid' ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`} style={{ perspective: '1200px' }}>
-                        {/* Scroll Spacer for Grid Mode */}
-                        {layoutMode === 'grid' && (
-                            <div style={{
-                                height: `${Math.max(100, 10 + (Math.ceil(items.length / 5) * 25))}%`,
-                                width: '1px',
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                pointerEvents: 'none'
-                            }} />
-                        )}
-                        {items.length === 0 && !isLoading && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center opacity-20 pointer-events-none">
-                                <Plus size={80} strokeWidth={1} className="mb-4 text-black" />
-                                <p className="text-xl font-medium text-black">Drag images to start</p>
+                    <div className="flex-1 h-full relative z-10">
+                        {/* --- DYNAMIC BACKGROUND (Fixed behind scrollable canvas) --- */}
+                        {isShaderMode && items.length > 0 && (
+                            <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
+                                <ShaderBackground
+                                    isActive={true}
+                                    imageUrl={layoutMode === 'animate'
+                                        ? (items[activeIndex] || items[0]).content
+                                        : (items.find(i => i.id === shaderItemId) || items[0]).content
+                                    }
+                                    isVideo={(layoutMode === 'animate'
+                                        ? (items[activeIndex] || items[0])
+                                        : (items.find(i => i.id === shaderItemId) || items[0])
+                                    ).type === 'video'}
+                                    onColorsExtracted={setActiveShaderColors}
+                                    enableMotionBlur={enableMotionBlur}
+                                    motionBlurIntensity={motionBlurIntensity}
+                                    isPaused={isPaused}
+                                    shaderMode={shaderMode}
+                                />
                             </div>
                         )}
 
-                        {/* --- SHOW MODE VS EDIT MODES --- */}
-                        {layoutMode === 'animate' && items.length > 0 ? (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <AnimatePresence mode="popLayout">
-                                    {(() => {
-                                        const item = items[activeIndex];
-                                        if (!item) return null;
-                                        return (
-                                            <motion.div
-                                                key={item.id}
-                                                variants={showVariants}
-                                                initial="enter"
-                                                animate="center"
-                                                exit="exit"
-                                                className="absolute w-[400px] max-w-[80%] aspect-[3/4] flex flex-col items-center justify-center"
-                                                style={{ transformStyle: 'preserve-3d' }}
-                                            >
-                                                {/* Content */}
-                                                <div className="relative w-full h-full">
-                                                    {item.isLoading ? (
-                                                        <div className="w-full h-full bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center relative overflow-hidden rounded-xl border border-white/50 shadow-xl">
-                                                            <div className="magical-glow opacity-50"></div>
-                                                            <Loader className="w-8 h-8 text-purple-600 animate-spin mb-3 relative z-10" />
-                                                            <span className="text-xs text-purple-800 font-medium relative z-10">Dreaming...</span>
-                                                        </div>
-                                                    ) : item.type === 'image' ? (
-                                                        <div
-                                                            className={`transition-all w-full h-full ${showBorders ? 'bg-white p-[10px]' : ''}`}
-                                                            style={{
-                                                                borderRadius: `${imageRadius}px`,
-                                                                boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35)'
-                                                            }}
-                                                        >
-                                                            <img
-                                                                src={item.content}
-                                                                className="pointer-events-none select-none object-cover w-full h-full block"
-                                                                style={{
-                                                                    borderRadius: showBorders ? `${Math.max(0, imageRadius - 8)}px` : `${imageRadius}px`,
-                                                                    objectFit: 'cover'
-                                                                }}
-                                                                crossOrigin="anonymous"
-                                                            />
-                                                        </div>
-                                                    ) : (
-                                                        <div className={`border border-white/60 p-8 shadow-2xl w-full h-full bg-white/80 backdrop-blur-xl flex flex-col justify-center`}
-                                                            style={{
-                                                                borderRadius: `${imageRadius}px`,
-                                                            }}>
-                                                            <div className="text-[12px] font-bold tracking-widest text-gray-500 uppercase mb-4">{item.author}</div>
-                                                            <div
-                                                                className="font-medium text-gray-800 leading-snug"
-                                                                style={{ fontSize: `${quoteSize}px` }}
-                                                            >
-                                                                {item.content}
+                        <div id="moodboard-canvas" ref={containerRef} className={`w-full h-full relative scroll-smooth custom-scrollbar ${layoutMode === 'grid' ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'} z-10`} style={{ perspective: '1200px' }}>
+                            {/* Scroll Spacer for Grid Mode */}
+                            {layoutMode === 'grid' && (
+                                <div style={{
+                                    height: `${Math.max(100, 10 + (Math.ceil(items.length / 5) * 25))}%`,
+                                    width: '1px',
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    pointerEvents: 'none'
+                                }} />
+                            )}
+                            {/* ... (rest of the component) */}
+
+                            {items.length === 0 && !isLoading && hasSeenTour && (
+                                <motion.div
+                                    initial={{ opacity: 0, filter: 'blur(10px)' }}
+                                    animate={{ opacity: 1, filter: 'blur(0px)' }}
+                                    transition={{ duration: 1.5, ease: "easeOut", delay: 0.5 }}
+                                    className="absolute inset-0 flex flex-col items-center justify-center px-6 pointer-events-none"
+                                >
+                                    <div className="p-12 rounded-3xl backdrop-blur-xl bg-white/30 shadow-[0_0_40px_-10px_rgba(255,255,255,0.5)] border border-white/20 pointer-events-auto">
+                                        <InteractiveQuote />
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            {/* --- SHOW MODE VS EDIT MODES --- */}
+                            {layoutMode === 'animate' && items.length > 0 ? (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+                                    <AnimatePresence mode="popLayout">
+                                        {items.map((item, index) => {
+                                            const len = items.length;
+                                            // Calculate circular offset
+                                            let offset = (index - activeIndex + len) % len;
+                                            // Normalize offset to be shortest distance (-len/2 to len/2)
+                                            if (offset > len / 2) offset -= len;
+
+                                            // Debug log for offset 0
+                                            if (offset === 0) {
+                                                console.log("Rendering Main Item:", item.id);
+                                            }
+
+                                            // Only render the immediate Previous, Center, and Next items
+                                            // This ensures items unmount before wrapping around, preventing the "fly across screen" glitch
+                                            if (offset < -1 || offset > 1) return null;
+
+                                            // Determine styles based on offset
+                                            let yOffset = 0;
+                                            let scale = 1;
+                                            let opacity = 1;
+                                            let zIndex = 0;
+                                            let blur = 0;
+                                            let pointerEvents = 'none'; // Default to none
+
+                                            if (offset === -1) {
+                                                // Previous (Top)
+                                                yOffset = -500;
+                                                scale = 0.6;
+                                                opacity = 0.4;
+                                                zIndex = 10;
+                                                blur = 5;
+                                            } else if (offset === 0) {
+                                                // Main (Center)
+                                                yOffset = 0;
+                                                scale = 1.1;
+                                                opacity = 1;
+                                                zIndex = 20;
+                                                blur = 0;
+                                                pointerEvents = 'auto'; // Enable interaction for Main
+                                            } else if (offset === 1) {
+                                                // Next (Bottom)
+                                                yOffset = 500;
+                                                scale = 0.6;
+                                                opacity = 0.4;
+                                                zIndex = 10;
+                                                blur = 5;
+                                            }
+
+                                            return (
+                                                <motion.div
+                                                    key={item.id}
+                                                    // layoutId={item.id} // REMOVED to prevent conflict with centering
+
+                                                    // Initial state matches the "enter" position (from BOTTOM)
+                                                    initial={{ y: 1000, scale: 0.4, opacity: 0, x: '-50%' }}
+                                                    animate={{
+                                                        y: yOffset,
+                                                        scale: scale,
+                                                        opacity: opacity,
+                                                        zIndex: zIndex,
+                                                        filter: `blur(${blur}px)`,
+                                                        x: '-50%' // Explicitly maintain centering
+                                                    }}
+                                                    transition={{
+                                                        type: "spring",
+                                                        stiffness: 40,
+                                                        damping: 15,
+                                                        mass: 1
+                                                    }}
+                                                    // Exit to TOP
+                                                    exit={{ y: -1000, opacity: 0, scale: 0.4, transition: { duration: 0.5 } }}
+                                                    className="absolute w-[400px] max-w-[80%] max-h-[60vh] flex flex-col items-center justify-center"
+                                                    style={{
+                                                        // transformStyle: 'preserve-3d', // Moved to inner motion.div
+                                                        aspectRatio: item.type === 'pdf' ? 3 / 4 : (item.aspectRatio ? 1 / item.aspectRatio : 3 / 4),
+                                                        // Fixed centering
+                                                        left: '50%',
+                                                        x: '-50%', // Initial CSS state
+                                                        pointerEvents: pointerEvents as any, // Dynamic pointer events
+                                                        perspective: '1000px'
+                                                    }}
+                                                >
+                                                    {/* Content */}
+                                                    <div className="relative w-full h-full" style={{ transformStyle: 'preserve-3d' }}>
+                                                        {item.isLoading ? (
+                                                            <div className="w-full h-full bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center relative overflow-hidden rounded-xl border border-white/50 shadow-xl">
+                                                                <div className="magical-glow opacity-50"></div>
+                                                                <Loader className="w-8 h-8 text-purple-600 animate-spin mb-3 relative z-10" />
+                                                                <span className="text-xs text-purple-800 font-medium relative z-10">Dreaming...</span>
                                                             </div>
+                                                        ) : (item.type === 'image' || item.type === 'video') ? (
+                                                            <motion.div
+                                                                className={`transition-all w-full h-full`}
+                                                                style={{
+                                                                    transformStyle: 'preserve-3d',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                // Floating animation for Main image only
+                                                                animate={offset === 0 ? {
+                                                                    y: [0, -25, 0],
+                                                                    rotate: [0, 2, -2, 0],
+                                                                    scale: [1, 1.02, 1],
+                                                                } : {}}
+                                                                transition={offset === 0 ? {
+                                                                    duration: 7,
+                                                                    repeat: Infinity,
+                                                                    ease: "easeInOut"
+                                                                } : {}}
+                                                                // Hover effect for Main image only
+                                                                whileHover={offset === 0 ? {
+                                                                    scale: 1.05,
+                                                                    rotateX: 10,
+                                                                    rotateY: 10,
+                                                                    boxShadow: "0 40px 80px -12px rgba(0,0,0,0.6)"
+                                                                } : {}}
+                                                            >
+                                                                {/* FLIP CONTAINER - Replaced with Universal Component */}
+                                                                <FlippableImage
+                                                                    item={item}
+                                                                    isFlipped={flippedItems.has(item.id)}
+                                                                    onToggleFlip={toggleFlip}
+                                                                    showBorders={showBorders}
+                                                                    imageRadius={imageRadius}
+                                                                    shaderColors={activeShaderColors}
+                                                                    isShaderActive={isShaderMode}
+                                                                />
+                                                            </motion.div>
+
+                                                        ) : item.type === 'pdf' ? (
+                                                            <div className="w-full h-full bg-white flex flex-col items-center justify-center border border-gray-200">
+                                                                <div className="text-lg font-bold text-gray-400">PDF</div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className={`border border-white/60 p-8 shadow-2xl w-full h-full bg-white/80 backdrop-blur-xl flex flex-col justify-center`}
+                                                                style={{
+                                                                    borderRadius: `${imageRadius}px`,
+                                                                }}>
+                                                                <div className="text-[12px] font-bold tracking-widest text-gray-500 uppercase mb-4">{item.author}</div>
+                                                                <div
+                                                                    className="font-medium text-gray-800 leading-snug"
+                                                                    style={{ fontSize: `${quoteSize}px` }}
+                                                                >
+                                                                    {item.content}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </motion.div>
+                                            );
+                                        })}
+                                    </AnimatePresence>
+                                </div>
+                            ) : (
+                                <AnimatePresence>
+                                    {items.map((item, index) => (
+                                        <BoardItem
+                                            key={item.id}
+                                            item={item}
+                                            index={index} // Pass index for staggered animation
+                                            isExporting={isExporting}
+                                            magicalItems={magicalItems}
+                                            removeItem={removeItem}
+                                            handleResizeStart={handleResizeStart}
+                                            handleRotateStart={handleRotateStart}
+                                            imageRadius={imageRadius}
+                                            showBorders={showBorders}
+                                            borderThickness={borderThickness}
+                                            quoteSize={quoteSize}
+                                            updateItemContent={updateItemContent}
+                                            bringToFront={bringToFront}
+                                            isActive={layoutMode === 'animate' && index === activeIndex}
+                                            resizingId={resizingId}
+
+                                            containerRef={containerRef}
+                                            isFlipped={flippedItems.has(item.id)}
+                                            onToggleFlip={toggleFlip}
+                                            shaderColors={activeShaderColors}
+                                            isShaderActive={isShaderMode}
+                                        />
+                                    ))}
+                                </AnimatePresence>
+                            )}
+
+                        </div>
+
+                        {/* --- INSPIRATION QUOTE --- */}
+                        {!isExporting && layoutMode !== 'animate' && (
+                            <div className="absolute bottom-8 left-8 z-[100]">
+                                <InspirationQuote />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* --- COMMUNITY GALLERY OVERLAY --- */}
+                    {viewMode === 'community' && (
+                        <div className="absolute inset-0 z-[9000] bg-[#f8f9fa]">
+                            <CommunityGallery
+                                onLoadBoard={handleLoadBoard}
+                                onCreateNew={handleCreateNew}
+                            />
+                        </div>
+                    )}
+
+                    {/* --- DOCK --- */}
+
+
+                    {/* --- DOCK --- */}
+                    {
+                        !isExporting && (
+                            <div id="dock-controls" className="absolute bottom-4 left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-end gap-4 pointer-events-none">
+                                <AnimatePresence>
+                                    {showSettings && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.5, y: 40, x: 40, filter: "blur(10px)" }}
+                                            animate={{ opacity: 1, scale: 1, y: 0, x: 0, filter: "blur(0px)" }}
+                                            exit={{ opacity: 0, scale: 0.5, y: 40, x: 40, filter: "blur(10px)" }}
+                                            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                                            style={{ transformOrigin: "55px bottom" }}
+                                            className="flex flex-col gap-4 p-5 rounded-3xl bg-white/60 backdrop-blur-2xl border-[3px] border-white/20 shadow-2xl w-80 pointer-events-auto"
+                                        >
+                                            <div className="space-y-5">
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Dashboard Radius</span><span className="text-gray-900 font-mono text-xs">{dashboardRadius}px</span></div>
+                                                    <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Item Radius</span><span className="text-gray-900 font-mono text-xs">{imageRadius}px</span></div>
+                                                    <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Border Thickness</span><span className="text-gray-900 font-mono text-xs">{borderThickness}px</span></div>
+                                                    <input type="range" min="0" max="40" value={borderThickness} onChange={(e) => setBorderThickness(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Show Grid</span>
+                                                    <div className="flex gap-2 items-center">
+                                                        {showGrid && (
+                                                            <button
+                                                                onClick={() => setGridType(prev => prev === 'square' ? 'dot' : 'square')}
+                                                                className="text-[10px] font-bold uppercase tracking-wide text-gray-400 hover:text-[#8A673F] transition-colors mr-2"
+                                                            >
+                                                                {gridType === 'square' ? 'Square' : 'Dot'}
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => setShowGrid(!showGrid)}
+                                                            className={`w-10 h-5 rounded-full relative transition-colors ${showGrid ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
+                                                        >
+                                                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${showGrid ? 'left-6' : 'left-1'}`} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="h-px bg-black/5 w-full" />
+                                                <div className="space-y-3">
+                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Background</span>
+                                                        <div className="flex gap-1">
+                                                            <button onClick={() => { setBgMode('solid'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Solid</button>
+                                                            <button onClick={() => { setBgMode('gradient'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Gradient</button>
+                                                            <button onClick={() => { setBgMode('shader'); setIsShaderMode(true); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'shader' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Shader</button>
+                                                        </div>
+                                                    </div>
+                                                    {bgMode === 'gradient' && (
+                                                        <div className="flex justify-between gap-2 pt-1">
+                                                            {[0, 1, 2].map((i) => (
+                                                                <motion.div key={i} className="w-8 h-8 rounded-full border border-black/10 relative overflow-hidden shadow-sm cursor-pointer hover:scale-110 transition-transform">
+                                                                    <input type="color" value={palette[i] || '#ffffff'} onChange={(e) => updatePaletteColor(i, e.target.value)} className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0" />
+                                                                    <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
+                                                                </motion.div>
+                                                            ))}
+                                                            <button onClick={() => updatePaletteFromAllImages([], true)} className="ml-auto text-[10px] text-gray-500 hover:text-[#8A673F] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#8A673F]/10 transition-colors"><RefreshCw size={10} /> Shuffle</button>
+                                                        </div>
+                                                    )}
+                                                    {bgMode === 'solid' && (
+                                                        <div className="flex gap-2 overflow-x-auto pt-1 pb-1">
+                                                            {['#FFFFFF', '#F3F4F6', '#000000', '#1a1a1a'].map(c => (<button key={c} onClick={() => setBackground(c)} className="w-6 h-6 rounded-full border border-black/10 flex-shrink-0" style={{ backgroundColor: c }} />))}
+                                                            <div className="w-6 h-6 rounded-full border border-black/10 relative overflow-hidden"><input type="color" value={background} onChange={(e) => setBackground(e.target.value)} className="absolute -top-2 -left-2 w-10 h-10 opacity-0 cursor-pointer" /><div className="w-full h-full" style={{ backgroundColor: background }} /></div>
+                                                        </div>
+                                                    )}
+                                                    {bgMode === 'shader' && (
+                                                        <div className="space-y-2 pt-2 border-t border-black/5 mt-2">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <span className="text-xs font-medium text-gray-600">Mode</span>
+                                                                <div className="flex bg-gray-200 rounded-lg p-0.5">
+                                                                    <button
+                                                                        onClick={() => setShaderMode('soft')}
+                                                                        className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'soft' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                                                                    >
+                                                                        Soft
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setShaderMode('extreme')}
+                                                                        className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'extreme' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                                                                    >
+                                                                        Extreme
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+
+
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <span className="text-xs font-medium text-gray-600">Visual</span>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const candidates = items.filter(i => i.type === 'image' || i.type === 'video');
+                                                                        if (candidates.length > 0) {
+                                                                            const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
+                                                                            setShaderItemId(randomItem.id);
+                                                                        }
+                                                                    }}
+                                                                    className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white shadow-sm text-gray-800 hover:bg-gray-50 flex items-center gap-1"
+                                                                >
+                                                                    <Shuffle size={10} />
+                                                                    Shuffle
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-xs font-medium text-gray-600">Motion Blur</span>
+                                                                <button
+                                                                    onClick={() => setEnableMotionBlur(!enableMotionBlur)}
+                                                                    className={`w-10 h-5 rounded-full relative transition-colors ${enableMotionBlur ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
+                                                                >
+                                                                    <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${enableMotionBlur ? 'left-6' : 'left-1'}`} />
+                                                                </button>
+                                                            </div>
+                                                            {enableMotionBlur && (
+                                                                <div className="space-y-1">
+                                                                    <div className="flex justify-between text-[10px] text-gray-400">
+                                                                        <span>Intensity</span>
+                                                                        <span>{Math.round(motionBlurIntensity * 100)}%</span>
+                                                                    </div>
+                                                                    <input
+                                                                        type="range"
+                                                                        min="0"
+                                                                        max="1"
+                                                                        step="0.01"
+                                                                        value={motionBlurIntensity}
+                                                                        onChange={(e) => setMotionBlurIntensity(parseFloat(e.target.value))}
+                                                                        className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors"
+                                                                    />
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
-                                            </motion.div>
-                                        );
-                                    })()}
+                                                <div className="h-px bg-black/5 w-full" />
+                                                <div className="space-y-3">
+                                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Elements</h4>
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between items-center"><span className="text-xs font-medium text-gray-600">Text Size</span><span className="text-[10px] font-mono text-gray-500">{quoteSize}px</span></div>
+                                                        <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                    </div>
+                                                    <div className="flex items-center justify-between pt-1">
+                                                        <span className="text-xs font-medium text-gray-600">Image Frames</span>
+                                                        <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-[#8A673F]' : 'bg-gray-200'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-white' : 'bg-white'}`} /></button>
+                                                    </div>
+                                                    <div className="flex items-center justify-between pt-1">
+                                                        <span className="text-xs font-medium text-gray-600">Typography</span>
+                                                        <button onClick={cycleFonts} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-[10px] font-medium text-gray-600 transition-colors">
+                                                            <CaseUpper size={12} />
+                                                            <span>Change Font</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    )}
                                 </AnimatePresence>
-                            </div>
-                        ) : (
-                            <AnimatePresence>
-                                {items.map((item, index) => (
-                                    <BoardItem
-                                        key={item.id}
-                                        item={item}
-                                        index={index} // Pass index for staggered animation
-                                        layoutMode={layoutMode}
-                                        isExporting={isExporting}
-                                        magicalItems={magicalItems}
-                                        removeItem={removeItem}
-                                        handleResizeStart={handleResizeStart}
-                                        imageRadius={imageRadius}
-                                        showBorders={showBorders}
-                                        quoteSize={quoteSize}
-                                        updateItemContent={updateItemContent}
-                                        bringToFront={bringToFront}
-                                        isActive={layoutMode === 'animate' && index === activeIndex}
-                                        resizingId={resizingId}
-                                        containerRef={containerRef}
-                                    />
-                                ))}
-                            </AnimatePresence>
-                        )}
 
-                    </div>
-                    {/* --- DOCK --- */}
-                    {!isExporting && (
-                        <div id="dock-controls" className="absolute bottom-4 left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-end gap-4 pointer-events-none">
-                            {showSettings && (
-                                <div className="flex flex-col gap-4 p-5 rounded-3xl bg-neutral-900/95 backdrop-blur-md border border-white/10 shadow-2xl animate-in slide-in-from-bottom-2 fade-in w-80">
-                                    <div className="space-y-5">
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Dashboard Radius</span><span className="text-white font-mono text-xs">{dashboardRadius}px</span></div>
-                                            <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Item Radius</span><span className="text-white font-mono text-xs">{imageRadius}px</span></div>
-                                            <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors" />
-                                        </div>
-                                        <div className="h-px bg-white/10 w-full" />
-                                        <div className="space-y-3">
-                                            <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Background</span><div className="flex gap-2"><button onClick={() => setBgMode('solid')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-white text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}>Solid</button><button onClick={() => setBgMode('gradient')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-white text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}>Gradient</button></div></div>
-                                            {bgMode === 'gradient' && (
-                                                <div className="flex justify-between gap-2 pt-1">
-                                                    {[0, 1, 2].map((i) => (
-                                                        <div key={i} className="w-8 h-8 rounded-full border border-white/20 relative overflow-hidden shadow-sm cursor-pointer hover:scale-110 transition-transform">
-                                                            <input type="color" value={palette[i] || '#ffffff'} onChange={(e) => updatePaletteColor(i, e.target.value)} className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0" />
-                                                            <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
+                                {/* UPDATED MENU: Frosted Light Theme */}
+                                <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border-[3px] border-white/20 max-w-full pointer-events-auto no-scrollbar transition-all duration-500 ease-in-out">
+                                    <AnimatePresence mode="wait" initial={false}>
+                                        {isDockExpanded && (
+                                            <motion.div
+                                                initial={{ width: 0, opacity: 0, overflow: "hidden" }}
+                                                animate={{ width: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }}
+                                                exit={{ width: 0, opacity: 0, overflow: "hidden" }}
+                                                transition={{ duration: 0.4, ease: "easeInOut" }}
+                                                className="flex items-center gap-2"
+                                            >
+                                                <div className="relative group flex items-center">
+                                                    <DockButton icon={Plus} />
+                                                    {/* Hover Menu for Add */}
+                                                    {/* Hover Menu for Add */}
+                                                    <div className="absolute left-0 bottom-full pb-2 flex flex-col opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+                                                        <div className="flex flex-col gap-2 bg-white/80 backdrop-blur-xl p-2 rounded-xl border border-white/20 shadow-xl">
+                                                            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 hover:bg-black/5 rounded-lg transition-colors text-sm font-medium text-gray-700 whitespace-nowrap">
+                                                                <FileImage size={16} />
+                                                                <span>Add Files</span>
+                                                            </button>
+                                                            <button onClick={addQuote} className="flex items-center gap-2 px-3 py-2 hover:bg-black/5 rounded-lg transition-colors text-sm font-medium text-gray-700 whitespace-nowrap">
+                                                                <Type size={16} />
+                                                                <span>Add Text</span>
+                                                            </button>
                                                         </div>
-                                                    ))}
-                                                    <button onClick={() => updatePaletteFromAllImages([], true)} className="ml-auto text-[10px] text-white/70 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 transition-colors"><RefreshCw size={10} /> Shuffle</button>
+                                                    </div>
+                                                    <input type="file" multiple accept="image/*,video/mp4,audio/mpeg,audio/mp3,application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
                                                 </div>
-                                            )}
-                                            {bgMode === 'solid' && (
-                                                <div className="flex gap-2 overflow-x-auto pt-1 pb-1">
-                                                    {['#FFFFFF', '#F3F4F6', '#000000', '#1a1a1a'].map(c => (<button key={c} onClick={() => setBackground(c)} className="w-6 h-6 rounded-full border border-white/20 flex-shrink-0" style={{ backgroundColor: c }} />))}
-                                                    <div className="w-6 h-6 rounded-full border border-white/20 relative overflow-hidden"><input type="color" value={background} onChange={(e) => setBackground(e.target.value)} className="absolute -top-2 -left-2 w-10 h-10 opacity-0 cursor-pointer" /><div className="w-full h-full" style={{ backgroundColor: background }} /></div>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="h-px bg-white/10 w-full" />
-                                        <div className="space-y-3">
-                                            <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Elements</h4>
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between items-center"><span className="text-xs font-medium text-neutral-300">Text Size</span><span className="text-[10px] font-mono text-neutral-500">{quoteSize}px</span></div>
-                                                <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white hover:bg-white/30 transition-colors" />
-                                            </div>
-                                            <div className="flex items-center justify-between pt-1">
-                                                <span className="text-xs font-medium text-neutral-300">Image Frames</span>
-                                                <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-white' : 'bg-white/10'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-black' : 'bg-white'}`} /></button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
 
-                            {/* UPDATED MENU: Frosted Light Theme */}
-                            <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border border-white/50 overflow-x-auto max-w-full pointer-events-auto no-scrollbar">
-                                <div className="relative group">
-                                    <DockButton onClick={() => fileInputRef.current?.click()} icon={Plus} label="Add" />
-                                    <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                                </div>
-
-                                {/* UPDATED: Gen Ref Image Button with Glow */}
-                                <DockButton
-                                    id="tour-ai-image" // Tour Target
-                                    onClick={handleAiGenerate}
-                                    icon={isGeneratingAI ? Loader : MagicIcon}
-                                    label={isGeneratingAI ? "Generating..." : "Gen Ref Image"}
-                                    active={isGeneratingAI}
-                                    className="ai-button-glow" // Apply the glow class here
-                                />
-                                {/* Add a spinner animation to the icon if generating */}
-                                {isGeneratingAI && (
-                                    <style>{`
+                                                {/* UPDATED: Gen Ref Image Button with Glow */}
+                                                <DockButton
+                                                    id="tour-ai-image" // Tour Target
+                                                    onClick={handleAiGenerate}
+                                                    icon={isGeneratingAI ? Loader : MagicIcon}
+                                                    label={isGeneratingAI ? "Generating..." : "Gen Ref Image"}
+                                                    active={isGeneratingAI}
+                                                    className="ai-button-glow" // Apply the glow class here
+                                                />
+                                                {/* Add a spinner animation to the icon if generating */}
+                                                {isGeneratingAI && (
+                                                    <style>{`
                                     .lucide-loader { animation: spin 2s linear infinite; }
                                     @keyframes spin { 100% { transform: rotate(360deg); } }
                                 `}</style>
-                                )}
+                                                )}
 
-                                <DockButton onClick={addQuote} icon={Type} label="Text" />
-                                <DockButton onClick={cycleFonts} icon={CaseUpper} label="Font" />
-                                <div className="w-px h-8 bg-black/10 mx-1" />
-                                <DockButton onClick={() => setShowSettings(!showSettings)} icon={Settings} label="Style" active={showSettings} />
-                                {/* ADDED ANIMATE BUTTON BACK */}
-                                <div id="tour-layout" className="flex gap-2">
-                                    <DockButton onClick={() => toggleLayoutMode('organic')} icon={Wind} label="Dynamic" active={layoutMode === 'organic'} />
-                                    <DockButton onClick={() => toggleLayoutMode('grid')} icon={LayoutGrid} label="Grid" active={layoutMode === 'grid'} />
+                                                <div className="w-px h-8 bg-black/10 mx-1" />
+                                                {/* Community Button */}
+                                                <DockButton
+                                                    onClick={() => setViewMode(prev => prev === 'community' ? 'editor' : 'community')}
+                                                    icon={Users}
+                                                    label="Community"
+                                                    active={viewMode === 'community'}
+                                                />
+                                                <div className="w-px h-8 bg-black/10 mx-1" />
+
+                                                <div className="w-px h-8 bg-black/10 mx-1" />
+                                                <DockButton onClick={() => setShowSettings(!showSettings)} icon={SlidersHorizontal} label="Style" active={showSettings} />
+                                                {/* ADDED ANIMATE BUTTON BACK */}
+                                                <div id="tour-layout" className="flex gap-2">
+                                                    <DockButton onClick={() => { toggleLayoutMode('organic'); setViewMode('editor'); }} icon={InfinityIcon} label="Dynamic" active={layoutMode === 'organic' && viewMode === 'editor'} />
+                                                    <DockButton onClick={() => { toggleLayoutMode('grid'); setViewMode('editor'); }} icon={Grid2X2} label="Grid" active={layoutMode === 'grid' && viewMode === 'editor'} />
+                                                </div>
+                                                <DockButton
+                                                    onClick={() => {
+                                                        setViewMode('editor');
+                                                        if (layoutMode === 'animate') {
+                                                            setIsPaused(!isPaused);
+                                                        } else {
+                                                            toggleLayoutMode('animate');
+                                                            setIsPaused(false);
+                                                        }
+                                                    }}
+                                                    icon={layoutMode === 'animate' && !isPaused ? Pause : Play}
+                                                    label={layoutMode === 'animate' ? (isPaused ? "Play" : "Pause") : "Show"}
+                                                    active={layoutMode === 'animate' && viewMode === 'editor'}
+                                                />
+                                                <div className="w-px h-8 bg-black/10 mx-1" />
+                                                <DockButton onClick={handleSaveToCommunity} icon={Download} label="Save to Community" />
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                    <DockButton
+                                        onClick={() => setIsDockExpanded(!isDockExpanded)}
+                                        icon={isDockExpanded ? ChevronRight : ChevronLeft}
+                                        label={isDockExpanded ? "Collapse" : "Expand"}
+                                    />
                                 </div>
-                                <DockButton
-                                    onClick={() => {
-                                        if (layoutMode === 'animate') {
-                                            setIsPaused(!isPaused);
-                                        } else {
-                                            toggleLayoutMode('animate');
-                                            setIsPaused(false);
-                                        }
-                                    }}
-                                    icon={layoutMode === 'animate' && !isPaused ? Pause : Play}
-                                    label={layoutMode === 'animate' ? (isPaused ? "Play" : "Pause") : "Show"}
-                                    active={layoutMode === 'animate'}
-                                />
-                                <div className="w-px h-8 bg-black/10 mx-1" />
-                                <DockButton onClick={handleExport} icon={Download} label="Save" />
                             </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-            <TourGuide onStepChange={handleTourStepChange} />
+                        )
+                    }
+                </div >
+            </div >
+            <TourGuide onStepChange={handleTourStepChange} onComplete={() => setHasSeenTour(true)} />
         </div >
     );
 };
