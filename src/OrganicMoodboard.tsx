@@ -17,6 +17,8 @@ import { DissolveEffect } from './components/DissolveEffect'; // Import Dissolve
 import { saveBoard } from './services/storage'; // Import storage service
 import type { SavedMoodboard } from './services/storage'; // Import type separately
 import CommunityGallery from './components/CommunityGallery'; // Import CommunityGallery
+
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { pdfjs } from 'react-pdf';
 
 // Configure worker for PDF processing
@@ -320,65 +322,66 @@ const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
 // --- BOARD ITEM COMPONENT ---
 // --- FLIPPABLE IMAGE COMPONENT ---
 const FlippableImage = ({ item, isFlipped, onToggleFlip, style, className, showBorders, imageRadius, borderThickness = 10, children, boardTitle, boardAuthor, isShaderActive, isExporting }: any) => {
+
+    // Helper to render the media content with common styling
+    const renderMediaContent = () => (
+        <div className={`w-full h-full overflow-hidden ${showBorders && !isShaderActive ? 'bg-white/40 backdrop-blur-md' : ''}`}
+            style={{
+                padding: '0px',
+                borderRadius: `${imageRadius}px`,
+                boxShadow: showBorders
+                    ? (isShaderActive
+                        ? '0 30px 60px -12px rgba(0,0,0,0.6)' // Deeper shadow for shader mode
+                        : `0 0 0 ${borderThickness}px rgba(255,255,255,0.2), 0 25px 50px -12px rgba(0,0,0,0.5)`
+                    )
+                    : '0 25px 50px -12px rgba(0,0,0,0.5)',
+                outline: (showBorders && !isShaderActive) ? '1px solid rgba(209, 213, 219, 0.6)' : 'none',
+                outlineOffset: (showBorders && !isShaderActive) ? `${borderThickness}px` : '0px'
+            }}>
+            {item.type === 'video' ? (
+                <video
+                    src={item.content}
+                    className="pointer-events-none select-none object-cover w-full h-full block"
+                    style={{
+                        borderRadius: `${imageRadius}px`,
+                        objectFit: 'cover'
+                    }}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                />
+            ) : (
+                <img
+                    src={item.content}
+                    className="pointer-events-none select-none object-cover w-full h-full block"
+                    style={{
+                        borderRadius: `${imageRadius}px`,
+                        objectFit: 'cover'
+                    }}
+                    crossOrigin="anonymous"
+                />
+            )}
+            {children}
+        </div>
+    );
+
+    // NORMAL RENDER (FLAT, NO FLIPPING)
     return (
         <motion.div
             className={`relative w-full h-full ${className}`}
-            style={{ ...style, transformStyle: 'preserve-3d', cursor: 'pointer' }}
-            onClick={(e) => {
-                e.stopPropagation(); // Prevent triggering parent click events if any
-                onToggleFlip(item.id);
+            style={{
+                ...style,
+                cursor: 'default', // Removed pointer cursor since clicking does nothing now
             }}
             initial={false}
             animate={{
-                rotateY: isFlipped ? 180 : 0,
-                scale: isFlipped ? [1, 1.1, 1] : [1, 1.1, 1], // Trigger pop on every flip
-            }}
-            transition={{
-                rotateY: { duration: 0.8, ease: [0.4, 0, 0.2, 1] },
-                scale: { duration: 0.8, times: [0, 0.5, 1], ease: "easeInOut" }
+                scale: 1, // Reset specific scale animations related to flip
             }}
         >
-            {/* FRONT FACE */}
-            <div className="absolute inset-0 w-full h-full" style={{ backfaceVisibility: 'hidden' }}>
-                <div className={`w-full h-full overflow-hidden ${showBorders && !isShaderActive ? 'bg-white/40 backdrop-blur-md' : ''}`}
-                    style={{
-                        padding: '0px',
-                        borderRadius: `${imageRadius}px`,
-                        boxShadow: showBorders
-                            ? (isShaderActive
-                                ? '0 30px 60px -12px rgba(0,0,0,0.6)' // Deeper shadow for shader mode
-                                : `0 0 0 ${borderThickness}px rgba(255,255,255,0.2), 0 25px 50px -12px rgba(0,0,0,0.5)`
-                            )
-                            : '0 25px 50px -12px rgba(0,0,0,0.5)',
-                        outline: (showBorders && !isShaderActive) ? '1px solid rgba(209, 213, 219, 0.6)' : 'none',
-                        outlineOffset: (showBorders && !isShaderActive) ? `${borderThickness}px` : '0px'
-                    }}>
-                    {item.type === 'video' ? (
-                        <video
-                            src={item.content}
-                            className="pointer-events-none select-none object-cover w-full h-full block"
-                            style={{
-                                borderRadius: `${imageRadius}px`,
-                                objectFit: 'cover'
-                            }}
-                            autoPlay
-                            loop
-                            muted
-                            playsInline
-                        />
-                    ) : (
-                        <img
-                            src={item.content}
-                            className="pointer-events-none select-none object-cover w-full h-full block"
-                            style={{
-                                borderRadius: `${imageRadius}px`,
-                                objectFit: 'cover'
-                            }}
-                            crossOrigin="anonymous"
-                        />
-                    )}
-                    {children}
-                </div>
+            {/* FRONT FACE ONLY */}
+            <div className="absolute inset-0 w-full h-full">
+                {renderMediaContent()}
 
                 {/* SHADER MODE GRADIENT STROKE */}
                 {isShaderActive && showBorders && (
@@ -396,38 +399,6 @@ const FlippableImage = ({ item, isFlipped, onToggleFlip, style, className, showB
                     />
                 )}
             </div>
-
-            {/* BACK FACE */}
-            {!isExporting && (
-                <div
-                    className="absolute inset-0 w-full h-full bg-white/95 backdrop-blur-md flex flex-col justify-end items-start p-6 text-left border-[3px] border-white/20"
-                    style={{
-                        backfaceVisibility: 'hidden',
-                        transform: 'rotateY(180deg)',
-                        borderRadius: `${imageRadius}px`,
-                        boxShadow: '0 10px 30px -10px rgba(0,0,0,0.2)'
-                    }}
-                >
-                    {item.isGenerated ? (
-                        <>
-                            <div className="text-xs font-bold tracking-widest text-purple-600 uppercase mb-1">Generated Image</div>
-                            <div className="text-sm font-serif text-gray-900 mb-4 leading-relaxed">
-                                This image is generated based on the images from <span className="font-bold">{boardTitle || "Visual Exploration 01"}</span> curated by <span className="font-bold">{boardAuthor || "Studio Name"}</span>.
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="text-xs font-bold tracking-widest text-purple-600 uppercase mb-1">Artist</div>
-                            <div className="text-xl font-serif text-gray-900 mb-4 leading-tight">{item.author || ARTISTS[Math.abs(item.id.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)) % ARTISTS.length]}</div>
-                        </>
-                    )}
-
-                    <div className="w-8 h-[1px] bg-gray-300 mb-4"></div>
-
-                    <div className="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">Date</div>
-                    <div className="text-sm font-medium text-gray-700">Nov 2024</div>
-                </div>
-            )}
         </motion.div>
     );
 };
@@ -578,6 +549,57 @@ const InteractiveQuote = () => {
     );
 };
 
+const LoadingOverlay = ({ message, progress }: { message: string, progress: number }) => {
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-md flex items-center justify-center pointer-events-none"
+        >
+            <div className="bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 max-w-sm w-full text-center border border-white/20">
+                <div className="relative w-16 h-16">
+                    <svg className="w-full h-full transform -rotate-90">
+                        <circle
+                            cx="32"
+                            cy="32"
+                            r="28"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            fill="transparent"
+                            className="text-gray-200"
+                        />
+                        <circle
+                            cx="32"
+                            cy="32"
+                            r="28"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            fill="transparent"
+                            className="text-purple-600 transition-all duration-300 ease-in-out"
+                            strokeDasharray={2 * Math.PI * 28}
+                            strokeDashoffset={2 * Math.PI * 28 * (1 - progress / 100)}
+                            strokeLinecap="round"
+                        />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-xs font-bold text-gray-700">{Math.round(progress)}%</span>
+                    </div>
+                </div>
+                <div>
+                    <h3 className="text-xl font-serif text-gray-900 mb-1">Rendering</h3>
+                    <p className="text-sm text-gray-500 font-medium">{message}</p>
+                </div>
+                <div className="flex gap-1">
+                    <motion.div animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
+                    <motion.div animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
+                    <motion.div animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
+                </div>
+            </div>
+        </motion.div>
+    );
+};
+
 const BoardItem = React.forwardRef(({
     item,
 
@@ -600,7 +622,8 @@ const BoardItem = React.forwardRef(({
     isFlipped, // Added for 3D flip
     onToggleFlip,
     boardTitle,
-    boardAuthor
+    boardAuthor,
+    layoutMode, // Added layoutMode explicitly
 }: any, ref: any) => {
     const [isPresent, safeToRemove] = usePresence();
     const isDraggingRef = useRef(false); // Track dragging state
@@ -753,7 +776,7 @@ const BoardItem = React.forwardRef(({
                 height: computedHeight !== 'auto' ? `${computedHeight}px` : 'auto',
                 perspective: '1000px',
                 borderRadius: `${imageRadius}px`,
-                rotate: currentRotation, // Apply dynamic rotation here
+                rotate: isExporting ? 0 : currentRotation, // Force 0 rotation during export
                 x,
                 y, // Bind y motion value
             }}
@@ -806,8 +829,6 @@ const BoardItem = React.forwardRef(({
                                 <MeshGradient palette={['#FF9A9E', '#FECFEF', '#A18CD1']} speed={0.3} />
                             </div>
 
-
-
                             {/* Main Card */}
                             <div
                                 className="w-full h-full bg-white/30 flex flex-col items-center justify-center relative overflow-hidden border-[3px] border-white/20 shadow-xl z-10 backdrop-blur-md"
@@ -829,13 +850,17 @@ const BoardItem = React.forwardRef(({
                     ) : (item.type === 'image' || item.type === 'video') ? (
                         <FlippableImage
                             item={item}
-                            isFlipped={isFlipped}
-                            isExporting={isExporting}
+                            // In 'animate' (Show) mode, disable flipping completely to prevent screenshot issues and keep cleaner look
+                            isFlipped={layoutMode === 'animate' ? false : isFlipped}
                             onToggleFlip={(id: string) => {
+                                // Disable flip interaction in 'animate' mode
+                                if (layoutMode === 'animate') return;
+
                                 if (!isDraggingRef.current) {
                                     onToggleFlip(id);
                                 }
                             }}
+                            isExporting={isExporting}
                             showBorders={showBorders}
                             imageRadius={imageRadius}
                             borderThickness={borderThickness}
@@ -929,10 +954,12 @@ const BoardItem = React.forwardRef(({
                                 </>
                             )}
                         </div>
-                    )}
-                </div>
-            )}
-        </motion.div>
+                    )
+                    }
+                </div >
+            )
+            }
+        </motion.div >
     );
 });
 
@@ -1004,6 +1031,8 @@ const OrganicMoodboard = () => {
     const [currentFontIndex, setCurrentFontIndex] = useState(0);
     const [showSettings, setShowSettings] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false); // New state for overlay
+    const [progress, setProgress] = useState(0); // New state for progress
     const [isLoading, setIsLoading] = useState(false);
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
     const [isGeneratingDescription, setIsGeneratingDescription] = useState(false); // New state
@@ -1391,29 +1420,104 @@ const OrganicMoodboard = () => {
 
     const handleSaveToCommunity = async () => {
         setIsExporting(true); // Hide UI controls
-        // Wait for UI to hide
-        await new Promise(resolve => setTimeout(resolve, 500));
+        setIsProcessing(true);
+        setProgress(0);
+
+        // Wait for UI to hide and animations to reset
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         try {
             const element = document.getElementById('moodboard-canvas');
             if (!element) throw new Error("Canvas not found");
 
-            const canvas = await html2canvas(element, {
-                scale: 0.5, // Smaller scale for thumbnail
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: bgMode === 'solid' ? background : null, // Handle transparency
-                logging: false
-            });
-            const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
+            const width = element.offsetWidth;
+            const height = element.offsetHeight;
 
-            const newBoard: SavedMoodboard = {
+            // Constrain resolution for performance and file size
+            // A width of ~600px is decent for community grid
+            const targetWidth = 600;
+            const scale = targetWidth / width;
+            // Ensure height is even (video encoding requirement usually, specifically h264 sometimes dislikes odd dimensions, but safer to be even)
+            let targetHeight = Math.round(height * scale);
+            if (targetHeight % 2 !== 0) targetHeight += 1;
+
+            // Muxer configuration
+            const muxer = new Muxer({
+                target: new ArrayBufferTarget(),
+                video: {
+                    codec: 'avc', // H.264
+                    width: targetWidth,
+                    height: targetHeight
+                },
+                fastStart: 'in-memory'
+            });
+
+            // VideoEncoder configuration
+            const videoEncoder = new VideoEncoder({
+                output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+                error: (e) => console.error(e)
+            });
+
+            videoEncoder.configure({
+                codec: 'avc1.42001f', // Baseline profile
+                width: targetWidth,
+                height: targetHeight,
+                bitrate: 1_000_000, // 1 Mbps
+                framerate: 10
+            });
+
+            // Capture Loop
+            // We'll capture 20 frames at 100ms interval = 2 seconds of video
+            const totalFrames = 20;
+            const frameDuration = 100; // ms
+            const fps = 10;
+            const frameDurationMicroseconds = 1_000_000 / fps;
+
+            for (let i = 0; i < totalFrames; i++) {
+                setProgress(Math.round((i / totalFrames) * 100));
+
+                // Capture Frame
+                const canvas = await html2canvas(element, {
+                    scale: scale,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: bgMode === 'solid' ? background : '#FFFFFF',
+                    logging: false
+                });
+
+                // Create VideoFrame from canvas
+                const frame = new VideoFrame(canvas, { timestamp: i * frameDurationMicroseconds });
+
+                // Encode
+                videoEncoder.encode(frame, { keyFrame: i % 10 === 0 });
+                frame.close(); // Important to close frames to avoid memory leaks
+
+                // Wait for next frame
+                await new Promise(r => setTimeout(r, frameDuration));
+            }
+
+            // Finalize
+            await videoEncoder.flush();
+            muxer.finalize();
+            const buffer = muxer.target.buffer;
+
+            // Create Blob and converting to Base64
+            const blob = new Blob([buffer], { type: 'video/mp4' });
+
+            const reader = new FileReader();
+            const thumbnail = await new Promise<string>((resolve) => {
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob);
+            });
+
+            // Save Board
+            const boardData: SavedMoodboard = {
                 id: currentBoardId || Math.random().toString(36).substr(2, 9),
-                title: title || "Untitled Board",
-                author: author || "Anonymous",
+                title: title || 'Untitled Board',
+                author: author || 'Anonymous',
+                thumbnail: thumbnail, // MP4 Data URL
                 timestamp: Date.now(),
-                thumbnail,
-                items,
+                items: items,
                 settings: {
                     palette,
                     background,
@@ -1432,15 +1536,15 @@ const OrganicMoodboard = () => {
                 }
             };
 
-            await saveBoard(newBoard);
-            setCurrentBoardId(newBoard.id);
-            // alert("Saved to Community!"); // Optional feedback
-            setViewMode('community');
+            await saveBoard(boardData);
+            alert("Saved to community successfully! (MP4 thumbnail created)");
+
         } catch (error) {
             console.error("Save failed", error);
-            alert("Failed to save to community.");
+            alert("Failed to save to community. This browser might not support WebCodecs MP4 encoding.");
         } finally {
             setIsExporting(false);
+            setIsProcessing(false);
         }
     };
 
@@ -1864,7 +1968,7 @@ const OrganicMoodboard = () => {
             <Styles />
 
             <div ref={exportWrapperRef} className={`w-full h-full flex items-center justify-center ${layoutMode === 'animate' ? 'p-0' : 'p-0 md:p-12'}`}>
-
+                {isProcessing && <LoadingOverlay message="Capturing moodboard..." progress={progress} />}
                 <div
                     id="moodboard-canvas"
                     className={`relative w-full h-full shadow-2xl overflow-hidden flex flex-row transition-all duration-500 ${layoutMode === 'animate' ? '' : 'max-w-[1800px] md:aspect-[16/10]'}`}
@@ -2265,6 +2369,7 @@ const OrganicMoodboard = () => {
                                             containerRef={containerRef}
                                             isFlipped={flippedItems.has(item.id)}
                                             onToggleFlip={toggleFlip}
+                                            layoutMode={layoutMode} // Pass layoutMode down
                                             shaderColors={activeShaderColors}
                                             isShaderActive={isShaderMode}
                                         />
