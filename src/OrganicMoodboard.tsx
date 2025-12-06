@@ -1073,6 +1073,37 @@ const OrganicMoodboard = () => {
         return () => clearInterval(interval);
     }, [layoutMode, isPaused, items.length]);
 
+    // --- PASTE HANDLER ---
+    useEffect(() => {
+        const handlePaste = (e: ClipboardEvent) => {
+            if (e.clipboardData?.items) {
+                const itemsList = Array.from(e.clipboardData.items);
+                const files: File[] = [];
+                const urls: string[] = [];
+
+                itemsList.forEach(item => {
+                    if (item.kind === 'file') {
+                        const file = item.getAsFile();
+                        if (file) files.push(file);
+                    } else if (item.kind === 'string' && item.type === 'text/plain') {
+                        item.getAsString(text => {
+                            if (text.match(/^https?:\/\/.*/)) { // Simple URL check
+                                urls.push(text);
+                                if (urls.length > 0) processUrls(urls);
+                            }
+                        });
+                    }
+                });
+
+                if (files.length > 0) {
+                    processFiles(files);
+                }
+            }
+        };
+
+        window.addEventListener('paste', handlePaste);
+        return () => window.removeEventListener('paste', handlePaste);
+    }, [items, layoutMode, globalZIndex]); // Dependencies for processFiles/processUrls logic execution context
 
 
     // --- Helpers ---
@@ -1408,13 +1439,94 @@ const OrganicMoodboard = () => {
         setIsDraggingOver(false);
     };
 
+    const processUrls = (urls: string[]) => {
+        if (!urls || urls.length === 0) return;
+        setIsLoading(true);
+
+        const containerWidth = (containerRef.current?.clientWidth || 0) > 0
+            ? containerRef.current!.clientWidth
+            : window.innerWidth;
+        const containerHeight = (containerRef.current?.clientHeight || 0) > 0
+            ? containerRef.current!.clientHeight
+            : window.innerHeight;
+
+        const itemPromises = urls.map((url, i) => {
+            return new Promise<BoardItem | null>((resolve) => {
+                const gridData = getSmartPos(items.length + i, layoutMode);
+                const pixelWidth = (gridData.widthPercent / 100) * containerWidth;
+                const pixelHeight = gridData.heightPercent ? (gridData.heightPercent / 100) * containerHeight : undefined;
+
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.src = url;
+                img.onload = () => {
+                    const aspectRatio = img.naturalHeight / img.naturalWidth;
+                    resolve({
+                        id: Math.random().toString(36).substr(2, 9),
+                        type: 'image',
+                        content: url,
+                        x: gridData.x,
+                        y: gridData.y,
+                        rotation: gridData.rotation,
+                        zIndex: globalZIndex + 1 + i,
+                        width: pixelWidth,
+                        height: pixelHeight,
+                        aspectRatio: aspectRatio
+                    });
+                };
+                img.onerror = () => {
+                    // Try as video if image fails? Or just resolve null.
+                    // Simple fallback for now:
+                    resolve(null);
+                };
+            });
+        });
+
+        Promise.all(itemPromises).then((newItems) => {
+            const validItems = newItems.filter((item): item is BoardItem => item !== null);
+            if (validItems.length > 0) {
+                setGlobalZIndex(prev => prev + validItems.length);
+                setItems(prev => [...prev, ...validItems]);
+                if (layoutMode === 'grid') {
+                    // reLayoutGrid will be triggered by useEffect on items change? 
+                    // No, reLayoutGrid(items) is called manually in addQuote.
+                    // We should call it here with new list.
+                    reLayoutGrid([...items, ...validItems]);
+                }
+            }
+            setIsLoading(false);
+        });
+    };
+
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDraggingOver(false);
+
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
             processFiles(files);
+            return;
+        }
+
+        // Handle URL drops (images from other sites)
+        const url = e.dataTransfer.getData('URL') || e.dataTransfer.getData('text/uri-list');
+        if (url) {
+            // Split by newline if multiple URLs are pasted/dropped (rare for drag, possible for copy/paste code reuse later)
+            const urls = url.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+            processUrls(urls);
+            return;
+        }
+
+        // Handle HTML drops (dragging image element)
+        const html = e.dataTransfer.getData('text/html');
+        if (html) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const img = doc.querySelector('img');
+            if (img && img.src) {
+                processUrls([img.src]);
+            }
         }
     };
 
