@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 // Ensure this path matches where you put the file
 import { generateMoodImageFromBoard, generateBoardDescription } from './services/imageGenerator';
-import MoodLogo from '../easy-moodboard/src/assets/moodlogo.svg';
+import MoodLogo from '../mood/src/assets/moodlogo.svg';
 import { TourGuide } from './components/TourGuide';
 import { PDFFlipBook } from './components/PDFFlipBook'; // Import PDF component
 import { ShaderBackground } from './components/ShaderBackground'; // Import ShaderBackground
