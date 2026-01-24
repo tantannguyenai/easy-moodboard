@@ -20,7 +20,7 @@ const TOUR_STEPS: TourStep[] = [
         targetId: 'tour-style',
         title: "Customize Look",
         description: "Change the look of the image/video containers in settings.",
-        position: 'top'
+        position: 'bottom' // Position bottom since button is at top-right
     },
     {
         targetId: 'tour-show',
