@@ -341,6 +341,28 @@ const FlippableImage = ({ item, style, className, showBorders, imageRadius, bord
         }
     };
 
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        if (item.type !== 'video' || !videoRef.current) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        videoRef.current?.play().catch(e => console.log("Autoplay prevented", e));
+                    } else {
+                        videoRef.current?.pause();
+                    }
+                });
+            },
+            { threshold: 0.2 } // Play when 20% visible
+        );
+
+        observer.observe(videoRef.current);
+        return () => observer.disconnect();
+    }, [item.type, item.content]);
+
     // Helper to render the media content with common styling
     const renderMediaContent = () => (
         <div className={`w-full h-full overflow-hidden ${showBorders && !isShaderActive ? 'bg-white/40 backdrop-blur-md' : ''}`}
@@ -358,16 +380,18 @@ const FlippableImage = ({ item, style, className, showBorders, imageRadius, bord
             }}>
             {item.type === 'video' ? (
                 <video
+                    ref={videoRef}
                     src={item.content}
                     className="pointer-events-none select-none object-cover w-full h-full block"
                     style={{
                         borderRadius: `${imageRadius}px`,
                         objectFit: 'cover' // Revert to cover as container will resize to fit
                     }}
-                    autoPlay
+                    // Remove autoPlay, handle via IntersectionObserver
                     loop
                     muted
                     playsInline
+                    preload="metadata" // Optimize loading
                     onLoadedMetadata={handleMediaLoad}
                 />
             ) : (
@@ -379,6 +403,8 @@ const FlippableImage = ({ item, style, className, showBorders, imageRadius, bord
                         objectFit: 'cover' // Revert to cover as container will resize to fit
                     }}
                     crossOrigin="anonymous"
+                    loading="lazy" // Optimize loading
+                    decoding="async"
                     onLoad={handleMediaLoad}
                 />
             )}
@@ -1060,7 +1086,10 @@ const OrganicMoodboard = () => {
         console.log("Checking loaded items:", items.length, items);
     }, []);
     const [globalZIndex, setGlobalZIndex] = useState(10);
-    const [layoutMode, setLayoutMode] = useState<'organic' | 'grid' | 'animate'>('organic');
+    // Default to 'grid' on mobile devices for better initial experience
+    const [layoutMode, setLayoutMode] = useState<'organic' | 'grid' | 'animate'>(
+        typeof window !== 'undefined' && window.innerWidth < 768 ? 'grid' : 'organic'
+    );
     const [activeIndex, setActiveIndex] = useState(0);
     const [flippedItems, setFlippedItems] = useState<Set<string>>(new Set()); // Track flipped items
     const [isDockExpanded, setIsDockExpanded] = useState(true);
@@ -1330,12 +1359,17 @@ const OrganicMoodboard = () => {
     };
 
     const getGridPos = (index: number) => {
-        const cols = windowWidth < 640 ? 2 : windowWidth < 1024 ? 3 : 5;
+        const isMobile = windowWidth < 640;
+        // Mobile: 1 column for "Feed" style scrolling
+        const cols = isMobile ? 1 : windowWidth < 1024 ? 3 : 5;
         // const rows = Math.ceil(totalCount / cols); // Unused
-        const gap = 3;
+
+        // Increase gap on mobile for better separation
+        const gap = isMobile ? 5 : 3;
+
         const cellWidth = (90 - (gap * (cols - 1))) / cols;
-        // Fixed height for grid cells to allow scrolling, approx 20% of screen height
-        const cellHeight = windowWidth < 640 ? 30 : 22;
+        // Taller height for grid cells on mobile to allow scrolling (approx 45% screen height)
+        const cellHeight = isMobile ? 45 : 22;
         const col = index % cols;
         const row = Math.floor(index / cols);
         const gridTotalWidth = (cols * cellWidth) + ((cols - 1) * gap);
