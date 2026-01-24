@@ -19,10 +19,9 @@ interface PDFFlipBookProps {
 }
 
 // Wrapper for Page to be compatible with HTMLFlipBook
-// We force the wrapper to be exactly the size of the book page
 const PageWrapper = forwardRef<HTMLDivElement, any>((props, ref) => {
     return (
-        <div ref={ref} className="bg-white shadow-sm overflow-hidden flex items-center justify-center" style={{ width: props.width, height: props.height }}>
+        <div ref={ref} className="overflow-hidden flex items-start justify-start relative">
             {props.children}
         </div>
     );
@@ -31,7 +30,7 @@ PageWrapper.displayName = 'PageWrapper';
 
 export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
     file,
-    width, // Ignored for sizing, we measure container
+    width,
     height,
     showBorders = false,
     borderThickness = 0,
@@ -40,41 +39,16 @@ export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
     previewOnly = false,
     onAspectRatioChange
 }) => {
-    const [numPages, setNumPages] = useState<number | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [shouldRenderPdf, setShouldRenderPdf] = useState(false);
-
-    // Resize Observer State
+    // State for exact container fitting
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+    const [debouncedSize, setDebouncedSize] = useState({ width: 0, height: 0 });
 
-    useEffect(() => {
-        if (!containerRef.current) return;
+    // State to hold the natural dimensions of the PDF page for AR detection
+    const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
 
-        const observer = new ResizeObserver(entries => {
-            for (let entry of entries) {
-                // Use contentRect or contentBoxSize
-                const { width, height } = entry.contentRect;
-                if (width > 0 && height > 0) {
-                    setContainerSize({ width, height });
-                }
-            }
-        });
-
-        observer.observe(containerRef.current);
-        return () => observer.disconnect();
-    }, []);
-
-    // Delay PDF rendering to prevent crashes
-    useEffect(() => {
-        setShouldRenderPdf(false);
-        const timer = setTimeout(() => {
-            if (containerSize.width > 0 && containerSize.height > 0) {
-                setShouldRenderPdf(true);
-            }
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [file, containerSize.width, containerSize.height]);
+    const [numPages, setNumPages] = useState<number | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
         setNumPages(numPages);
@@ -83,21 +57,59 @@ export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
 
     // Capture page dimensions when the first page loads to update parent AR
     function onPageLoadSuccess(page: any) {
+        const viewport = page.getViewport({ scale: 1 });
+        // Set natural dimensions if needed
+        if (pdfDimensions.width === 0) {
+            setPdfDimensions({ width: viewport.width, height: viewport.height });
+        }
+
         if (onAspectRatioChange) {
-            const viewport = page.getViewport({ scale: 1 });
             const ratio = viewport.height / viewport.width;
             onAspectRatioChange(ratio);
         }
     }
 
-    // Use measured size. If 0, don't render book yet.
-    const renderWidth = containerSize.width;
-    const renderHeight = containerSize.height;
+    // Resize Observer with Debounce/Throttling
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const updateSize = (width: number, height: number) => {
+            if (width > 0 && height > 0) {
+                setContainerSize({ width, height });
+            }
+        };
+
+        const observer = new ResizeObserver(entries => {
+            const entry = entries[0];
+            if (entry) {
+                updateSize(entry.contentRect.width, entry.contentRect.height);
+            }
+        });
+
+        observer.observe(containerRef.current);
+        return () => observer.disconnect();
+    }, []);
+
+    // Debounce effects to prevent rapid re-rendering of PDF during resize
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSize(containerSize);
+        }, 200); // Wait 200ms after resize stops
+        return () => clearTimeout(timer);
+    }, [containerSize]);
+
+    // Dimensions to use for rendering
+    // Fallback to containerSize if debounced is 0 (initial load) to show something faster
+    const renderWidth = debouncedSize.width > 0 ? debouncedSize.width : containerSize.width;
+    const renderHeight = debouncedSize.height > 0 ? debouncedSize.height : containerSize.height;
+
+    // Only render PDF if we have valid dimensions
+    const canRender = renderWidth > 0 && renderHeight > 0;
 
     return (
         <div
             ref={containerRef}
-            className={`w-full h-full flex items-center justify-center overflow-hidden relative transition-all duration-300 ${showBorders ? 'bg-white' : ''}`}
+            className={`w-full h-full flex items-start justify-start overflow-hidden relative transition-all duration-300 ${showBorders ? 'bg-white' : ''}`}
             style={{
                 borderRadius: `${imageRadius}px`,
                 boxShadow: showBorders
@@ -108,18 +120,18 @@ export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
             }}
             onPointerDown={(e) => e.stopPropagation()}
         >
-            {(!shouldRenderPdf || isLoading || renderWidth === 0) && (
+            {isLoading && (
                 <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-50/50 backdrop-blur-sm transition-opacity duration-300">
                     <Loader className="w-8 h-8 text-gray-400 animate-spin" />
                 </div>
             )}
 
-            {shouldRenderPdf && renderWidth > 0 && renderHeight > 0 && (
+            {canRender && (
                 <Document
                     file={file}
                     onLoadSuccess={onDocumentLoadSuccess}
                     onLoadError={(error) => console.error("Error loading PDF document:", error)}
-                    loading={<div className="p-4 text-gray-400">Loading PDF...</div>}
+                    loading={null}
                     error={<div className="p-4 text-red-500 text-xs">Failed to load PDF</div>}
                     className="flex items-center justify-center w-full h-full"
                 >
@@ -133,20 +145,18 @@ export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
                                     onLoadSuccess={onPageLoadSuccess}
                                     renderTextLayer={false}
                                     renderAnnotationLayer={false}
-                                    onLoadError={(error) => console.error(`Error loading page 1:`, error)}
-                                    error={<div className="text-red-500 text-[10px]">Page Error</div>}
                                 />
                             </div>
                         ) : (
                             <HTMLFlipBook
-                                key={`flipbook-${file}-${renderWidth}-${renderHeight}`} // Re-mount if dimensions change to resizing cleanly
+                                key={`flipbook-${renderWidth}-${renderHeight}`} // Remount only when settled size changes
                                 width={renderWidth}
                                 height={renderHeight}
-                                size="fixed" // Strict fix to props
-                                minWidth={10} // Allow small sizes for thumbnails
-                                maxWidth={3000}
+                                size="fixed" // Explicitly fix to container size
+                                minWidth={10}
+                                maxWidth={5000}
                                 minHeight={10}
-                                maxHeight={3000}
+                                maxHeight={5000}
                                 maxShadowOpacity={0.5}
                                 showCover={true}
                                 mobileScrollSupport={true}
@@ -157,7 +167,7 @@ export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
                                 flippingTime={1000}
                                 usePortrait={true}
                                 startZIndex={0}
-                                autoSize={true}
+                                autoSize={true} // Auto adjust single/double page
                                 clickEventForward={true}
                                 useMouseEvents={true}
                                 swipeDistance={30}
@@ -165,19 +175,16 @@ export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
                                 disableFlipByClick={false}
                             >
                                 {Array.from(new Array(numPages), (_, index) => (
-                                    <PageWrapper key={`page_${index + 1}`} width={renderWidth} height={renderHeight}>
-                                        <div className="w-full h-full flex items-center justify-center">
+                                    <PageWrapper key={`page_${index + 1}`}>
+                                        <div className="w-full h-full flex items-start justify-start overflow-hidden">
                                             <Page
                                                 pageNumber={index + 1}
                                                 width={renderWidth}
-                                                // Only pass width to maintain AR? 
-                                                // If we pass both, react-pdf scales to fit.
-                                                // Since Wrapper is strict, we want Page to fit inside.
-                                                // Passing 'height' ensures it doesn't overflow vertically if mismatched.
                                                 height={renderHeight}
                                                 onLoadSuccess={index === 0 ? onPageLoadSuccess : undefined}
                                                 renderTextLayer={false}
                                                 renderAnnotationLayer={false}
+                                                className="block bg-white"
                                                 onLoadError={(error) => console.error(`Error loading page ${index + 1}:`, error)}
                                                 error={<div className="text-red-500 text-[10px]">Page Error</div>}
                                             />

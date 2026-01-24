@@ -148,15 +148,25 @@ const DockButton = React.memo(({ onClick, icon: Icon, label, active = false, cla
         title={label}
         id={id}
         onClick={onClick}
-        className={`flex flex-col items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl transition-all duration-200 group relative 
-      ${active ? 'bg-black text-white shadow-xl scale-105' : 'hover:bg-black/5 text-neutral-600 hover:text-black hover:scale-105'} 
-      ${className}`}
+        className={`flex flex-col items-center justify-center 
+        w-auto h-14 min-w-[3.5rem] px-2.5 md:px-0 md:w-12 md:h-12 md:min-w-0
+        rounded-xl transition-all duration-200 group relative flex-shrink-0
+        ${active ? 'bg-black text-white shadow-xl scale-105' : 'hover:bg-black/5 text-neutral-600 hover:text-black hover:scale-105'} 
+        ${className}`}
     >
-        <Icon size={20} className="md:w-[22px] md:h-[22px]" strokeWidth={1.5} />
+        <Icon size={20} className="md:w-[22px] md:h-[22px] mb-1 md:mb-0" strokeWidth={1.5} />
         {label && (
-            <span className="absolute -top-10 bg-white/80 backdrop-blur-md text-black/80 border border-black/5 shadow-sm text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                {label}
-            </span>
+            <>
+                {/* Mobile: Visible Label below icon */}
+                <span className="block md:hidden text-[9px] font-bold leading-none whitespace-nowrap tracking-wide opacity-90">
+                    {label}
+                </span>
+
+                {/* Desktop: Tooltip */}
+                <span className="hidden md:block absolute -top-10 bg-white/80 backdrop-blur-md text-black/80 border border-black/5 shadow-sm text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                    {label}
+                </span>
+            </>
         )}
     </button>
 ));
@@ -2600,7 +2610,7 @@ const OrganicMoodboard = () => {
                                                             <div className={`w-full h-full bg-white/80 backdrop-blur-xl border border-white/60 shadow-2xl overflow-hidden`}
                                                                 style={{
                                                                     borderRadius: `${imageRadius}px`,
-                                                                    aspectRatio: '1/1' // Default audio to square if no other ratio
+                                                                    aspectRatio: '4/1' // Wide and short for audio
                                                                 }}>
                                                                 <AudioPlayer
                                                                     src={item.content}
@@ -2689,170 +2699,195 @@ const OrganicMoodboard = () => {
                     {/* --- DOCK --- */}
 
 
+                    {/* --- TOP RIGHT MENU --- */}
+                    {!isExporting && (
+                        <div className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2 pointer-events-none">
+                            {/* Header Buttons */}
+                            <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/60 backdrop-blur-2xl shadow-xl border-[2px] border-white/20 pointer-events-auto">
+                                <DockButton
+                                    onClick={() => setViewMode(prev => prev === 'community' ? 'editor' : 'community')}
+                                    icon={Users}
+                                    label="Community"
+                                    active={viewMode === 'community'}
+                                />
+                                <DockButton
+                                    onClick={handleSaveToCommunity}
+                                    icon={Download}
+                                    label={window.innerWidth < 768 ? "Publish" : "Save to Community"}
+                                />
+                                <div className="w-px h-8 bg-black/10 mx-1" />
+                                <DockButton
+                                    id="tour-style"
+                                    onClick={() => setShowSettings(!showSettings)}
+                                    icon={SlidersHorizontal}
+                                    label="Style"
+                                    active={showSettings}
+                                />
+                            </div>
+
+                            {/* Settings Panel - Moved to Top Right */}
+                            <AnimatePresence>
+                                {showSettings && (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9, y: -20, x: 20, filter: "blur(10px)" }}
+                                        animate={{ opacity: 1, scale: 1, y: 0, x: 0, filter: "blur(0px)" }}
+                                        exit={{ opacity: 0, scale: 0.9, y: -20, x: 20, filter: "blur(10px)" }}
+                                        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                                        className="flex flex-col gap-4 p-5 rounded-3xl bg-white/60 backdrop-blur-2xl border-[3px] border-white/20 shadow-2xl w-80 pointer-events-auto origin-top-right"
+                                    >
+                                        <div className="space-y-5">
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Dashboard Radius</span><span className="text-gray-900 font-mono text-xs">{dashboardRadius}px</span></div>
+                                                <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Item Radius</span><span className="text-gray-900 font-mono text-xs">{imageRadius}px</span></div>
+                                                <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Border Thickness</span><span className="text-gray-900 font-mono text-xs">{borderThickness}px</span></div>
+                                                <input type="range" min="0" max="40" value={borderThickness} onChange={(e) => setBorderThickness(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Show Grid</span>
+                                                <div className="flex gap-2 items-center">
+                                                    {showGrid && (
+                                                        <button
+                                                            onClick={() => setGridType(prev => prev === 'square' ? 'dot' : 'square')}
+                                                            className="text-[10px] font-bold uppercase tracking-wide text-gray-400 hover:text-[#8A673F] transition-colors mr-2"
+                                                        >
+                                                            {gridType === 'square' ? 'Square' : 'Dot'}
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => setShowGrid(!showGrid)}
+                                                        className={`w-10 h-5 rounded-full relative transition-colors ${showGrid ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
+                                                    >
+                                                        <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${showGrid ? 'left-6' : 'left-1'}`} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="h-px bg-black/5 w-full" />
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Background</span>
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => { setBgMode('solid'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Solid</button>
+                                                        <button onClick={() => { setBgMode('gradient'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Gradient</button>
+                                                        <button onClick={() => { setBgMode('shader'); setIsShaderMode(true); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'shader' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Shader</button>
+                                                    </div>
+                                                </div>
+                                                {bgMode === 'gradient' && (
+                                                    <div className="flex justify-between gap-2 pt-1">
+                                                        {[0, 1, 2].map((i) => (
+                                                            <motion.div key={i} className="w-8 h-8 rounded-full border border-black/10 relative overflow-hidden shadow-sm cursor-pointer hover:scale-110 transition-transform">
+                                                                <input type="color" value={palette[i] || '#ffffff'} onChange={(e) => updatePaletteColor(i, e.target.value)} className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0" />
+                                                                <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
+                                                            </motion.div>
+                                                        ))}
+                                                        <button onClick={() => updatePaletteFromAllImages([], true)} className="ml-auto text-[10px] text-gray-500 hover:text-[#8A673F] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#8A673F]/10 transition-colors"><RefreshCw size={10} /> Shuffle</button>
+                                                    </div>
+                                                )}
+                                                {bgMode === 'solid' && (
+                                                    <div className="flex gap-2 overflow-x-auto pt-1 pb-1">
+                                                        {['#FFFFFF', '#F3F4F6', '#000000', '#1a1a1a'].map(c => (<button key={c} onClick={() => setBackground(c)} className="w-6 h-6 rounded-full border border-black/10 flex-shrink-0" style={{ backgroundColor: c }} />))}
+                                                        <div className="w-6 h-6 rounded-full border border-black/10 relative overflow-hidden"><input type="color" value={background} onChange={(e) => setBackground(e.target.value)} className="absolute -top-2 -left-2 w-10 h-10 opacity-0 cursor-pointer" /><div className="w-full h-full" style={{ backgroundColor: background }} /></div>
+                                                    </div>
+                                                )}
+                                                {bgMode === 'shader' && (
+                                                    <div className="space-y-2 pt-2 border-t border-black/5 mt-2">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <span className="text-xs font-medium text-gray-600">Mode</span>
+                                                            <div className="flex bg-gray-200 rounded-lg p-0.5">
+                                                                <button
+                                                                    onClick={() => setShaderMode('soft')}
+                                                                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'soft' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                                                                >
+                                                                    Soft
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setShaderMode('extreme')}
+                                                                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'extreme' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                                                                >
+                                                                    Extreme
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <span className="text-xs font-medium text-gray-600">Visual</span>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const candidates = items.filter(i => i.type === 'image' || i.type === 'video');
+                                                                    if (candidates.length > 0) {
+                                                                        const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
+                                                                        setShaderItemId(randomItem.id);
+                                                                    }
+                                                                }}
+                                                                className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white shadow-sm text-gray-800 hover:bg-gray-50 flex items-center gap-1"
+                                                            >
+                                                                <Shuffle size={10} />
+                                                                Shuffle
+                                                            </button>
+                                                        </div>
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-xs font-medium text-gray-600">Motion Blur</span>
+                                                            <button
+                                                                onClick={() => setEnableMotionBlur(!enableMotionBlur)}
+                                                                className={`w-10 h-5 rounded-full relative transition-colors ${enableMotionBlur ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
+                                                            >
+                                                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${enableMotionBlur ? 'left-6' : 'left-1'}`} />
+                                                            </button>
+                                                        </div>
+                                                        {enableMotionBlur && (
+                                                            <div className="space-y-1">
+                                                                <div className="flex justify-between text-[10px] text-gray-400">
+                                                                    <span>Intensity</span>
+                                                                    <span>{Math.round(motionBlurIntensity * 100)}%</span>
+                                                                </div>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0"
+                                                                    max="1"
+                                                                    step="0.01"
+                                                                    value={motionBlurIntensity}
+                                                                    onChange={(e) => setMotionBlurIntensity(parseFloat(e.target.value))}
+                                                                    className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="h-px bg-black/5 w-full" />
+                                            <div className="space-y-3">
+                                                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Elements</h4>
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-center"><span className="text-xs font-medium text-gray-600">Text Size</span><span className="text-[10px] font-mono text-gray-500">{quoteSize}px</span></div>
+                                                    <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                </div>
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <span className="text-xs font-medium text-gray-600">Image Frames</span>
+                                                    <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-[#8A673F]' : 'bg-gray-200'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-white' : 'bg-white'}`} /></button>
+                                                </div>
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <span className="text-xs font-medium text-gray-600">Typography</span>
+                                                    <button onClick={cycleFonts} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-[10px] font-medium text-gray-600 transition-colors">
+                                                        <CaseUpper size={12} />
+                                                        <span>Change Font</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    )}
+
                     {/* --- DOCK --- */}
                     {
                         !isExporting && (
                             <div id="dock-controls" className="absolute bottom-6 left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-center md:items-end gap-4 pointer-events-none">
-                                <AnimatePresence>
-                                    {showSettings && (
-                                        <motion.div
-                                            initial={{ opacity: 0, scale: 0.5, y: 40, x: 40, filter: "blur(10px)" }}
-                                            animate={{ opacity: 1, scale: 1, y: 0, x: 0, filter: "blur(0px)" }}
-                                            exit={{ opacity: 0, scale: 0.5, y: 40, x: 40, filter: "blur(10px)" }}
-                                            transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                                            style={{ transformOrigin: "55px bottom" }}
-                                            className="flex flex-col gap-4 p-5 rounded-3xl bg-white/60 backdrop-blur-2xl border-[3px] border-white/20 shadow-2xl w-80 pointer-events-auto"
-                                        >
-                                            <div className="space-y-5">
-                                                <div className="space-y-2">
-                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Dashboard Radius</span><span className="text-gray-900 font-mono text-xs">{dashboardRadius}px</span></div>
-                                                    <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Item Radius</span><span className="text-gray-900 font-mono text-xs">{imageRadius}px</span></div>
-                                                    <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Border Thickness</span><span className="text-gray-900 font-mono text-xs">{borderThickness}px</span></div>
-                                                    <input type="range" min="0" max="40" value={borderThickness} onChange={(e) => setBorderThickness(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
-                                                </div>
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Show Grid</span>
-                                                    <div className="flex gap-2 items-center">
-                                                        {showGrid && (
-                                                            <button
-                                                                onClick={() => setGridType(prev => prev === 'square' ? 'dot' : 'square')}
-                                                                className="text-[10px] font-bold uppercase tracking-wide text-gray-400 hover:text-[#8A673F] transition-colors mr-2"
-                                                            >
-                                                                {gridType === 'square' ? 'Square' : 'Dot'}
-                                                            </button>
-                                                        )}
-                                                        <button
-                                                            onClick={() => setShowGrid(!showGrid)}
-                                                            className={`w-10 h-5 rounded-full relative transition-colors ${showGrid ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
-                                                        >
-                                                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${showGrid ? 'left-6' : 'left-1'}`} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <div className="h-px bg-black/5 w-full" />
-                                                <div className="space-y-3">
-                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Background</span>
-                                                        <div className="flex gap-1">
-                                                            <button onClick={() => { setBgMode('solid'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Solid</button>
-                                                            <button onClick={() => { setBgMode('gradient'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Gradient</button>
-                                                            <button onClick={() => { setBgMode('shader'); setIsShaderMode(true); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'shader' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Shader</button>
-                                                        </div>
-                                                    </div>
-                                                    {bgMode === 'gradient' && (
-                                                        <div className="flex justify-between gap-2 pt-1">
-                                                            {[0, 1, 2].map((i) => (
-                                                                <motion.div key={i} className="w-8 h-8 rounded-full border border-black/10 relative overflow-hidden shadow-sm cursor-pointer hover:scale-110 transition-transform">
-                                                                    <input type="color" value={palette[i] || '#ffffff'} onChange={(e) => updatePaletteColor(i, e.target.value)} className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0" />
-                                                                    <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
-                                                                </motion.div>
-                                                            ))}
-                                                            <button onClick={() => updatePaletteFromAllImages([], true)} className="ml-auto text-[10px] text-gray-500 hover:text-[#8A673F] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#8A673F]/10 transition-colors"><RefreshCw size={10} /> Shuffle</button>
-                                                        </div>
-                                                    )}
-                                                    {bgMode === 'solid' && (
-                                                        <div className="flex gap-2 overflow-x-auto pt-1 pb-1">
-                                                            {['#FFFFFF', '#F3F4F6', '#000000', '#1a1a1a'].map(c => (<button key={c} onClick={() => setBackground(c)} className="w-6 h-6 rounded-full border border-black/10 flex-shrink-0" style={{ backgroundColor: c }} />))}
-                                                            <div className="w-6 h-6 rounded-full border border-black/10 relative overflow-hidden"><input type="color" value={background} onChange={(e) => setBackground(e.target.value)} className="absolute -top-2 -left-2 w-10 h-10 opacity-0 cursor-pointer" /><div className="w-full h-full" style={{ backgroundColor: background }} /></div>
-                                                        </div>
-                                                    )}
-                                                    {bgMode === 'shader' && (
-                                                        <div className="space-y-2 pt-2 border-t border-black/5 mt-2">
-                                                            <div className="flex items-center justify-between mb-2">
-                                                                <span className="text-xs font-medium text-gray-600">Mode</span>
-                                                                <div className="flex bg-gray-200 rounded-lg p-0.5">
-                                                                    <button
-                                                                        onClick={() => setShaderMode('soft')}
-                                                                        className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'soft' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-                                                                    >
-                                                                        Soft
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => setShaderMode('extreme')}
-                                                                        className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'extreme' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-                                                                    >
-                                                                        Extreme
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-
-
-
-                                                            <div className="flex items-center justify-between mb-2">
-                                                                <span className="text-xs font-medium text-gray-600">Visual</span>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        const candidates = items.filter(i => i.type === 'image' || i.type === 'video');
-                                                                        if (candidates.length > 0) {
-                                                                            const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
-                                                                            setShaderItemId(randomItem.id);
-                                                                        }
-                                                                    }}
-                                                                    className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white shadow-sm text-gray-800 hover:bg-gray-50 flex items-center gap-1"
-                                                                >
-                                                                    <Shuffle size={10} />
-                                                                    Shuffle
-                                                                </button>
-                                                            </div>
-
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-xs font-medium text-gray-600">Motion Blur</span>
-                                                                <button
-                                                                    onClick={() => setEnableMotionBlur(!enableMotionBlur)}
-                                                                    className={`w-10 h-5 rounded-full relative transition-colors ${enableMotionBlur ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
-                                                                >
-                                                                    <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${enableMotionBlur ? 'left-6' : 'left-1'}`} />
-                                                                </button>
-                                                            </div>
-                                                            {enableMotionBlur && (
-                                                                <div className="space-y-1">
-                                                                    <div className="flex justify-between text-[10px] text-gray-400">
-                                                                        <span>Intensity</span>
-                                                                        <span>{Math.round(motionBlurIntensity * 100)}%</span>
-                                                                    </div>
-                                                                    <input
-                                                                        type="range"
-                                                                        min="0"
-                                                                        max="1"
-                                                                        step="0.01"
-                                                                        value={motionBlurIntensity}
-                                                                        onChange={(e) => setMotionBlurIntensity(parseFloat(e.target.value))}
-                                                                        className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors"
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div className="h-px bg-black/5 w-full" />
-                                                <div className="space-y-3">
-                                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Elements</h4>
-                                                    <div className="space-y-2">
-                                                        <div className="flex justify-between items-center"><span className="text-xs font-medium text-gray-600">Text Size</span><span className="text-[10px] font-mono text-gray-500">{quoteSize}px</span></div>
-                                                        <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
-                                                    </div>
-                                                    <div className="flex items-center justify-between pt-1">
-                                                        <span className="text-xs font-medium text-gray-600">Image Frames</span>
-                                                        <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-[#8A673F]' : 'bg-gray-200'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-white' : 'bg-white'}`} /></button>
-                                                    </div>
-                                                    <div className="flex items-center justify-between pt-1">
-                                                        <span className="text-xs font-medium text-gray-600">Typography</span>
-                                                        <button onClick={cycleFonts} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-[10px] font-medium text-gray-600 transition-colors">
-                                                            <CaseUpper size={12} />
-                                                            <span>Change Font</span>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
+                                {/* REMOVED SETTINGS PANEL FROM BOTTOM */}
 
                                 {/* UPDATED MENU: Frosted Light Theme */}
                                 <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border-[3px] border-white/20 max-w-full overflow-x-auto pointer-events-auto no-scrollbar transition-all duration-500 ease-in-out touch-pan-x">
@@ -2874,7 +2909,7 @@ const OrganicMoodboard = () => {
                                                     id="tour-ai-image" // Tour Target
                                                     onClick={handleAiGenerate}
                                                     icon={isGeneratingAI ? Loader : MagicIcon}
-                                                    label={isGeneratingAI ? "Generating..." : "Gen Ref Image"}
+                                                    label={isGeneratingAI ? "Generating..." : (window.innerWidth < 768 ? "Gen AI" : "Gen Ref Image")}
                                                     active={isGeneratingAI}
                                                     className="ai-button-glow" // Apply the glow class here
                                                 />
@@ -2887,22 +2922,8 @@ const OrganicMoodboard = () => {
                                                 )}
 
                                                 <div className="w-px h-8 bg-black/10 mx-1" />
-                                                {/* Community Button */}
-                                                <DockButton
-                                                    onClick={() => setViewMode(prev => prev === 'community' ? 'editor' : 'community')}
-                                                    icon={Users}
-                                                    label="Community"
-                                                    active={viewMode === 'community'}
-                                                />
-                                                <div className="w-px h-8 bg-black/10 mx-1" />
 
-                                                <div className="w-px h-8 bg-black/10 mx-1" />
-                                                <DockButton id="tour-style" onClick={() => setShowSettings(!showSettings)} icon={SlidersHorizontal} label="Style" active={showSettings} />
-                                                {/* ADDED ANIMATE BUTTON BACK */}
-                                                <div id="tour-layout" className="flex gap-2">
-                                                    <DockButton onClick={() => { toggleLayoutMode('organic'); setViewMode('editor'); }} icon={InfinityIcon} label="Dynamic" active={layoutMode === 'organic' && viewMode === 'editor'} />
-                                                    <DockButton onClick={() => { toggleLayoutMode('grid'); setViewMode('editor'); }} icon={Grid2X2} label="Grid" active={layoutMode === 'grid' && viewMode === 'editor'} />
-                                                </div>
+                                                {/* MOVED: Show Button to left */}
                                                 <DockButton
                                                     id="tour-show"
                                                     onClick={() => {
@@ -2918,8 +2939,15 @@ const OrganicMoodboard = () => {
                                                     label={layoutMode === 'animate' ? (isPaused ? "Play" : "Pause") : "Show"}
                                                     active={layoutMode === 'animate' && viewMode === 'editor'}
                                                 />
+
                                                 <div className="w-px h-8 bg-black/10 mx-1" />
-                                                <DockButton onClick={handleSaveToCommunity} icon={Download} label="Save to Community" />
+
+                                                <div id="tour-layout" className="flex gap-2">
+                                                    <DockButton onClick={() => { toggleLayoutMode('organic'); setViewMode('editor'); }} icon={InfinityIcon} label="Dynamic" active={layoutMode === 'organic' && viewMode === 'editor'} />
+                                                    <DockButton onClick={() => { toggleLayoutMode('grid'); setViewMode('editor'); }} icon={Grid2X2} label="Grid" active={layoutMode === 'grid' && viewMode === 'editor'} />
+                                                </div>
+
+
                                             </motion.div>
                                         )}
                                     </AnimatePresence>
