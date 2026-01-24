@@ -13,7 +13,7 @@ const TOUR_STEPS: TourStep[] = [
     {
         targetId: 'moodboard-canvas', // Target the canvas specifically
         title: "Welcome to Mood",
-        description: "Your space for visual exploration. Drag & drop images, videos or text anywhere to curate your vibe.",
+        description: "Welcome! We've added some examples to get you started. Drag & drop them, or add your own images, videos, or text to curate your vibe.",
         position: 'bottom' // Position relative to center of canvas
     },
     {
@@ -36,14 +36,7 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
     const [coords, setCoords] = useState<{ x: number, y: number, arrowOffset: number, placement: string }>({ x: 0, y: 0, arrowOffset: 0, placement: 'bottom' });
     const [targetRect, setTargetRect] = useState<{ rect: DOMRect; step: number } | null>(null);
 
-    useEffect(() => {
-        // Check if tour has been completed before
-        const hasSeenTour = localStorage.getItem('hasSeenTour');
-        if (hasSeenTour) {
-            setIsVisible(false);
-            onComplete?.();
-        }
-    }, []);
+
 
     const tooltipRef = useRef<HTMLDivElement>(null);
 
@@ -161,7 +154,7 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
 
     const handleClose = () => {
         setIsVisible(false);
-        localStorage.setItem('hasSeenTour', 'true');
+
         onComplete?.();
     };
 

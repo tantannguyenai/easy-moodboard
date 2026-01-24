@@ -81,6 +81,10 @@ export const ShaderBackground: React.FC<ShaderBackgroundProps> = ({
     // 1. Color Extraction Logic
     useEffect(() => {
         if (!imageUrl) return;
+
+        // Prevent trying to extract colors from MP3 or non-visual files
+        if (imageUrl.toLowerCase().endsWith('.mp3')) return;
+
         let isCancelled = false;
 
         const extractColors = (source: CanvasImageSource) => {
@@ -165,8 +169,11 @@ export const ShaderBackground: React.FC<ShaderBackgroundProps> = ({
 
     // 3. Handle Image/Video Updates (Texture Loading)
     useEffect(() => {
+        // Skip audio files or empty urls
+        if (!imageUrl || imageUrl.toLowerCase().endsWith('.mp3')) return;
+
         const state = glState.current;
-        if (!state.gl || !state.textures.t0 || !state.textures.t1 || !imageUrl) return;
+        if (!state.gl || !state.textures.t0 || !state.textures.t1) return;
 
         let isCancelled = false;
         const gl = state.gl!;

@@ -33,11 +33,7 @@ const QUOTES = [
     { text: "Everything you can imagine is real.", author: "Pablo Picasso" },
 ];
 
-const ARTISTS = [
-    "Alex Chen", "Jordan Lee", "Casey Smith", "Taylor Kim", "Morgan Davis",
-    "Jamie Wilson", "Riley Brown", "Avery Miller", "Quinn Taylor", "Skyler Anderson",
-    "Dakota Thomas", "Reese Martinez", "Cameron White", "Parker Harris", "Sage Clark"
-];
+
 
 const FONTS = [
     { name: "Piazzolla", family: "'Piazzolla', serif" },
@@ -147,8 +143,9 @@ const Styles = () => (
 
 // --- DOCK BUTTON COMPONENT ---
 // Updated for lighter, modern menu: Dark text on light background
-const DockButton = ({ onClick, icon: Icon, label, active = false, className = "", id }: any) => (
+const DockButton = React.memo(({ onClick, icon: Icon, label, active = false, className = "", id }: any) => (
     <button
+        title={label}
         id={id}
         onClick={onClick}
         className={`flex flex-col items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl transition-all duration-200 group relative 
@@ -162,7 +159,7 @@ const DockButton = ({ onClick, icon: Icon, label, active = false, className = ""
             </span>
         )}
     </button>
-);
+));
 
 // --- ANIMATED MESH GRADIENT ---
 // --- ANIMATED MESH GRADIENT ---
@@ -321,7 +318,28 @@ const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
 
 // --- BOARD ITEM COMPONENT ---
 // --- FLIPPABLE IMAGE COMPONENT ---
-const FlippableImage = ({ item, isFlipped, onToggleFlip, style, className, showBorders, imageRadius, borderThickness = 10, children, boardTitle, boardAuthor, isShaderActive, isExporting }: any) => {
+const FlippableImage = ({ item, style, className, showBorders, imageRadius, borderThickness = 10, children, isShaderActive, updateAspectRatio }: any) => {
+
+    const handleMediaLoad = (e: any) => {
+        if (!updateAspectRatio) return;
+
+        let naturalWidth, naturalHeight;
+        if (item.type === 'video') {
+            naturalWidth = e.currentTarget.videoWidth;
+            naturalHeight = e.currentTarget.videoHeight;
+        } else {
+            naturalWidth = e.currentTarget.naturalWidth;
+            naturalHeight = e.currentTarget.naturalHeight;
+        }
+
+        if (naturalWidth && naturalHeight) {
+            const newAspectRatio = naturalHeight / naturalWidth;
+            // Only update if significantly different to prevent loops/minor jitter
+            if (!item.aspectRatio || Math.abs(item.aspectRatio - newAspectRatio) > 0.01) {
+                updateAspectRatio(item.id, newAspectRatio);
+            }
+        }
+    };
 
     // Helper to render the media content with common styling
     const renderMediaContent = () => (
@@ -344,12 +362,13 @@ const FlippableImage = ({ item, isFlipped, onToggleFlip, style, className, showB
                     className="pointer-events-none select-none object-cover w-full h-full block"
                     style={{
                         borderRadius: `${imageRadius}px`,
-                        objectFit: 'cover'
+                        objectFit: 'cover' // Revert to cover as container will resize to fit
                     }}
                     autoPlay
                     loop
                     muted
                     playsInline
+                    onLoadedMetadata={handleMediaLoad}
                 />
             ) : (
                 <img
@@ -357,9 +376,10 @@ const FlippableImage = ({ item, isFlipped, onToggleFlip, style, className, showB
                     className="pointer-events-none select-none object-cover w-full h-full block"
                     style={{
                         borderRadius: `${imageRadius}px`,
-                        objectFit: 'cover'
+                        objectFit: 'cover' // Revert to cover as container will resize to fit
                     }}
                     crossOrigin="anonymous"
+                    onLoad={handleMediaLoad}
                 />
             )}
             {children}
@@ -624,6 +644,7 @@ const BoardItem = React.forwardRef(({
     boardTitle,
     boardAuthor,
     layoutMode, // Added layoutMode explicitly
+    updateAspectRatio, // Added prop
 }: any, ref: any) => {
     const [isPresent, safeToRemove] = usePresence();
     const isDraggingRef = useRef(false); // Track dragging state
@@ -866,6 +887,12 @@ const BoardItem = React.forwardRef(({
                             borderThickness={borderThickness}
                             boardTitle={boardTitle}
                             boardAuthor={boardAuthor}
+                            updateAspectRatio={updateAspectRatio}
+                            onAspectRatioChange={(newRatio: number) => {
+                                if (updateAspectRatio && (!item.aspectRatio || Math.abs(item.aspectRatio - newRatio) > 0.01)) {
+                                    updateAspectRatio(item.id, newRatio);
+                                }
+                            }}
                         >
                             {!isExporting && (
                                 <>
@@ -965,9 +992,73 @@ const BoardItem = React.forwardRef(({
 
 
 
+const DEFAULT_ITEMS: BoardItem[] = [
+    {
+        id: 'example-1',
+        type: 'image',
+        content: new URL('./examplesassets/42ce9208-5f24-48d9-9d3c-88a05cd62305.jpeg', import.meta.url).href,
+        x: 15, y: 15, rotation: -5, zIndex: 1, width: 300, aspectRatio: 1.5, manualWidth: 300,
+        author: 'Example'
+    },
+    {
+        id: 'example-2',
+        type: 'video',
+        content: new URL('./examplesassets/Matcha3.mp4', import.meta.url).href,
+        x: 55, y: 20, rotation: 3, zIndex: 2, width: 400, aspectRatio: 0.56, manualWidth: 400,
+        author: 'Example'
+    },
+    {
+        id: 'example-3',
+        type: 'image',
+        content: new URL('./examplesassets/u1357314557_a_abstract_zoom_in_of_people_sitting_at_a_city_park_efdaf28e-ee7d-4fd6-8ec5-05f04d4107bb.png', import.meta.url).href,
+        x: 25, y: 55, rotation: 8, zIndex: 3, width: 350, aspectRatio: 1, manualWidth: 350,
+        author: 'Example'
+    },
+    {
+        id: 'example-4',
+        type: 'image',
+        content: new URL('./examplesassets/1763407626973.jpeg', import.meta.url).href,
+        x: 70, y: 45, rotation: -2, zIndex: 4, width: 300, aspectRatio: 1.3, manualWidth: 300,
+        author: 'Example'
+    },
+    {
+        id: 'example-5',
+        type: 'pdf',
+        content: new URL('./examplesassets/2023-lululemon-impact-report.pdf', import.meta.url).href,
+        x: 5, y: 65, rotation: 5, zIndex: 5, width: 250, aspectRatio: 0.77, manualWidth: 250,
+        author: 'Example'
+    },
+    {
+        id: 'example-6',
+        type: 'video',
+        content: new URL('./examplesassets/7ebfbd28-a2d3-48a2-8329-2147b64550cd.mp4', import.meta.url).href,
+        x: 45, y: 75, rotation: -3, zIndex: 6, width: 350, aspectRatio: 0.56, manualWidth: 350,
+        author: 'Example'
+    },
+    {
+        id: 'example-7',
+        type: 'video',
+        content: new URL('./examplesassets/coolgradient.mp4', import.meta.url).href,
+        x: 80, y: 15, rotation: 6, zIndex: 7, width: 320, aspectRatio: 1, manualWidth: 320,
+        author: 'Example'
+    },
+    {
+        id: 'example-8',
+        type: 'audio',
+        content: new URL('./examplesassets/Aura.mp3', import.meta.url).href,
+        x: 10, y: 90, rotation: 0, zIndex: 8, width: 300, aspectRatio: undefined, manualWidth: 300,
+        author: 'Aura.mp3'
+    }
+];
+
 const OrganicMoodboard = () => {
     // --- State ---
-    const [items, setItems] = useState<BoardItem[]>([]);
+    const [items, setItems] = useState<BoardItem[]>([...DEFAULT_ITEMS]);
+
+    // DEBUG: Check items on mount
+    useEffect(() => {
+        console.log("Checking loaded items:", items.length, items);
+    }, []);
     const [globalZIndex, setGlobalZIndex] = useState(10);
     const [layoutMode, setLayoutMode] = useState<'organic' | 'grid' | 'animate'>('organic');
     const [activeIndex, setActiveIndex] = useState(0);
@@ -1019,7 +1110,7 @@ const OrganicMoodboard = () => {
     const [dashboardRadius, setDashboardRadius] = useState(32);
     const [imageRadius, setImageRadius] = useState(12);
     const [background, setBackground] = useState('#FFFFFF');
-    const [bgMode, setBgMode] = useState<'solid' | 'gradient' | 'shader'>('gradient');
+    const [bgMode, setBgMode] = useState<'solid' | 'gradient' | 'shader'>('shader');
 
     const [showBorders, setShowBorders] = useState(true);
     const [borderThickness, setBorderThickness] = useState(10); // New state for border thickness
@@ -1041,7 +1132,7 @@ const OrganicMoodboard = () => {
 
     // Magical Effect State
     const [magicalItems, setMagicalItems] = useState<string[]>([]);
-    const [isShaderMode, setIsShaderMode] = useState(false); // New state for Shader Mode
+    const [isShaderMode, setIsShaderMode] = useState(true); // Default to True for shader mode
     const [activeShaderColors, setActiveShaderColors] = useState<string[]>([]); // New state for reactive borders
     const [enableMotionBlur, setEnableMotionBlur] = useState(false); // New state for motion blur
     const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.5); // New state for motion blur intensity
@@ -1834,13 +1925,19 @@ const OrganicMoodboard = () => {
             ? containerRef.current!.clientHeight
             : window.innerHeight;
 
+        // Fail-safe handling for dimensions to prevent NaN crash
+        let safeWidth = containerWidth;
+        let safeHeight = containerHeight;
+        if (!safeWidth || safeWidth <= 0) safeWidth = window.innerWidth || 1000;
+        if (!safeHeight || safeHeight <= 0) safeHeight = window.innerHeight || 800;
+
         const cols = windowWidth < 640 ? 2 : windowWidth < 1024 ? 3 : 5;
         const gap = 3; // % horizontal gap
         const cellWidth = (90 - (gap * (cols - 1))) / cols; // %
 
         // Calculate gap in pixels based on container width to insure uniform spacing
-        const gapPx = (gap / 100) * containerWidth;
-        const gapVerticalPercent = (gapPx / containerHeight) * 100;
+        const gapPx = (gap / 100) * safeWidth;
+        const gapVerticalPercent = (gapPx / safeHeight) * 100;
 
         // Track height of each column in %
         // Start Y at 10%
@@ -1856,7 +1953,7 @@ const OrganicMoodboard = () => {
             const y = colHeights[col];
 
             // Calculate pixel dimensions
-            const widthPx = (cellWidth / 100) * containerWidth;
+            const widthPx = (cellWidth / 100) * safeWidth;
             let heightPx = item.height || widthPx; // Default fallback
 
             // Calculate height based on aspect ratio if available
@@ -1880,7 +1977,7 @@ const OrganicMoodboard = () => {
                 if (!item.height) heightPx = widthPx * 0.6; // Default aspect for text
             }
 
-            const heightPercent = (heightPx / containerHeight) * 100;
+            const heightPercent = (heightPx / safeHeight) * 100;
 
             // Update column height for next item in this column
             colHeights[col] += heightPercent + gapVerticalPercent;
@@ -1896,9 +1993,13 @@ const OrganicMoodboard = () => {
         }));
     };
 
+    const isTogglingRef = useRef(false);
+
     const toggleLayoutMode = (mode: 'organic' | 'grid' | 'animate') => {
-        // FIX: Allow clicking same mode to re-shuffle layout
-        // if (layoutMode === mode) return; 
+        // Prevent rapid clicking breaking the layout
+        if (isTogglingRef.current) return;
+        isTogglingRef.current = true;
+        setTimeout(() => { isTogglingRef.current = false; }, 300);
 
         setLayoutMode(mode);
         if (mode === 'animate') {
@@ -1908,7 +2009,7 @@ const OrganicMoodboard = () => {
         }
 
         // Stabilize shader before shuffling if not set
-        if (!shaderItemId && items.length > 0) {
+        if (!shaderItemId && items.length > 0 && items[0]) {
             setShaderItemId(items[0].id);
         }
 
@@ -1916,6 +2017,8 @@ const OrganicMoodboard = () => {
         const itemsToLayout = [...items].sort(() => Math.random() - 0.5);
 
         if (mode === 'grid') {
+            // Force a small delay to allow state to settle/DOM to update if needed, though react batching usually handles it.
+            // But main safety is the debounce above.
             reLayoutGrid(itemsToLayout);
         } else if (mode === 'organic') {
             setItems(itemsToLayout.map((item, index) => {
@@ -2258,12 +2361,12 @@ const OrganicMoodboard = () => {
                                 <ShaderBackground
                                     isActive={true}
                                     imageUrl={layoutMode === 'animate'
-                                        ? (items[activeIndex] || items[0]).content
-                                        : (items.find(i => i.id === shaderItemId) || items[0]).content
+                                        ? (items[activeIndex] || items[0] || { content: '' }).content
+                                        : ((items.find(i => i.id === shaderItemId) || items[0] || { content: '' }).content)
                                     }
                                     isVideo={(layoutMode === 'animate'
-                                        ? (items[activeIndex] || items[0])
-                                        : (items.find(i => i.id === shaderItemId) || items[0])
+                                        ? (items[activeIndex] || items[0] || { type: 'image' })
+                                        : ((items.find(i => i.id === shaderItemId) || items[0] || { type: 'image' }))
                                     ).type === 'video'}
                                     onColorsExtracted={setActiveShaderColors}
                                     enableMotionBlur={enableMotionBlur}
@@ -2374,17 +2477,24 @@ const OrganicMoodboard = () => {
                                                         damping: 15,
                                                         mass: 1
                                                     }}
-                                                    // Exit to TOP
-                                                    exit={{ y: -1000, opacity: 0, scale: 0.4, transition: { duration: 0.5 } }}
-                                                    className="absolute w-[400px] max-w-[80%] max-h-[60vh] flex flex-col items-center justify-center"
+                                                    // Prioritize height constraint for "show" mode to keep items consistent
+                                                    // but allow width to flex up to strict screen bounds.
+                                                    className="absolute flex flex-col items-center justify-center p-4 outline-none"
                                                     style={{
-                                                        // transformStyle: 'preserve-3d', // Moved to inner motion.div
-                                                        aspectRatio: item.type === 'pdf' ? 3 / 4 : (item.aspectRatio ? 1 / item.aspectRatio : 3 / 4),
-                                                        // Fixed centering
+                                                        // Reduced height to render background more visible
+                                                        height: '65vh',
+                                                        width: 'auto',
+                                                        minWidth: '20vh', // Prevent tiny items
+                                                        maxWidth: '70vw',
+                                                        // Valid for all types: CSS expects W/H. item.AR is H/W. So use 1/AR.
+                                                        aspectRatio: `${1 / (item.aspectRatio || (item.type === 'pdf' ? 1.33 : 1))}`,
+
+                                                        // Fixed centering logic
                                                         left: '50%',
-                                                        x: '-50%', // Initial CSS state
-                                                        pointerEvents: pointerEvents as any, // Dynamic pointer events
-                                                        perspective: '1000px'
+                                                        x: '-50%', // translate -50%
+                                                        pointerEvents: pointerEvents as any,
+                                                        perspective: '1000px',
+                                                        zIndex: zIndex
                                                     }}
                                                 >
                                                     {/* Content */}
@@ -2434,8 +2544,36 @@ const OrganicMoodboard = () => {
                                                             </motion.div>
 
                                                         ) : item.type === 'pdf' ? (
-                                                            <div className="w-full h-full bg-white flex flex-col items-center justify-center border border-gray-200">
-                                                                <div className="text-lg font-bold text-gray-400">PDF</div>
+                                                            <PDFFlipBook
+                                                                file={item.content}
+                                                                width={600} // Fixed base width for aspect ratio calc
+                                                                height={600 * (item.aspectRatio || 1.33)} // Height derived from AR
+                                                                showBorders={showBorders}
+                                                                borderThickness={borderThickness}
+                                                                imageRadius={imageRadius}
+                                                                onAspectRatioChange={(newRatio: number) => {
+                                                                    // Only update if significantly different
+                                                                    if (!item.aspectRatio || Math.abs(item.aspectRatio - newRatio) > 0.01) {
+                                                                        // We can access setItems from closure or pass a handler
+                                                                        // Show mode is inside OrganicMoodboard component so setItems is available
+                                                                        setItems((prev) => prev.map((i) =>
+                                                                            i.id === item.id ? { ...i, aspectRatio: newRatio } : i
+                                                                        ));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ) : item.type === 'audio' ? (
+                                                            <div className={`w-full h-full bg-white/80 backdrop-blur-xl border border-white/60 shadow-2xl overflow-hidden`}
+                                                                style={{
+                                                                    borderRadius: `${imageRadius}px`,
+                                                                    aspectRatio: '1/1' // Default audio to square if no other ratio
+                                                                }}>
+                                                                <AudioPlayer
+                                                                    src={item.content}
+                                                                    fileName={item.author}
+                                                                    imageRadius={imageRadius}
+                                                                    className="w-full h-full"
+                                                                />
                                                             </div>
                                                         ) : (
                                                             <div className={`border border-white/60 p-8 shadow-2xl w-full h-full bg-white/80 backdrop-blur-xl flex flex-col justify-center`}
@@ -2467,6 +2605,11 @@ const OrganicMoodboard = () => {
                                             isExporting={isExporting}
                                             magicalItems={magicalItems}
                                             removeItem={removeItem}
+                                            updateAspectRatio={(id: string, newRatio: number) => {
+                                                setItems((prev) => prev.map((i) =>
+                                                    i.id === id ? { ...i, aspectRatio: newRatio } : i
+                                                ));
+                                            }}
                                             handleResizeStart={handleResizeStart}
                                             handleRotateStart={handleRotateStart}
                                             imageRadius={imageRadius}
@@ -2652,6 +2795,7 @@ const OrganicMoodboard = () => {
                                                         </div>
                                                     )}
                                                 </div>
+
                                                 <div className="h-px bg-black/5 w-full" />
                                                 <div className="space-y-3">
                                                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Elements</h4>
@@ -2687,24 +2831,9 @@ const OrganicMoodboard = () => {
                                                 transition={{ duration: 0.4, ease: "easeInOut" }}
                                                 className="flex items-center gap-2"
                                             >
-                                                <div className="relative group flex items-center">
-                                                    <DockButton icon={Plus} />
-                                                    {/* Hover Menu for Add */}
-                                                    {/* Hover Menu for Add */}
-                                                    <div className="absolute left-0 bottom-full pb-2 flex flex-col opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-300 translate-y-2 group-hover:translate-y-0">
-                                                        <div className="flex flex-col gap-2 bg-white/80 backdrop-blur-xl p-2 rounded-xl border border-white/20 shadow-xl">
-                                                            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 hover:bg-black/5 rounded-lg transition-colors text-sm font-medium text-gray-700 whitespace-nowrap">
-                                                                <FileImage size={16} />
-                                                                <span>Add Files</span>
-                                                            </button>
-                                                            <button onClick={addQuote} className="flex items-center gap-2 px-3 py-2 hover:bg-black/5 rounded-lg transition-colors text-sm font-medium text-gray-700 whitespace-nowrap">
-                                                                <Type size={16} />
-                                                                <span>Add Text</span>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <input type="file" multiple accept="image/*,video/mp4,audio/mpeg,audio/mp3,application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                                                </div>
+                                                <DockButton onClick={() => fileInputRef.current?.click()} icon={Plus} label="Add Image" />
+                                                <DockButton onClick={addQuote} icon={Type} label="Add Text" />
+                                                <input type="file" multiple accept="image/*,video/mp4,audio/mpeg,audio/mp3,application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
 
                                                 {/* UPDATED: Gen Ref Image Button with Glow */}
                                                 <DockButton
