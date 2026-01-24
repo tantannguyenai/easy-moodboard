@@ -13,25 +13,19 @@ const TOUR_STEPS: TourStep[] = [
     {
         targetId: 'moodboard-canvas', // Target the canvas specifically
         title: "Welcome to Mood",
-        description: "Your space for visual exploration. Drag & drop images anywhere or use the dock to get started.",
+        description: "Your space for visual exploration. Drag & drop images, videos or text anywhere to curate your vibe.",
         position: 'bottom' // Position relative to center of canvas
     },
     {
-        targetId: 'tour-ai-desc',
-        title: "AI Description",
-        description: "Click the Sparkles icon to automatically generate a poetic description of your board's vibe.",
-        position: 'right'
-    },
-    {
-        targetId: 'tour-ai-image',
-        title: "AI Image Generation",
-        description: "Generate new images that perfectly match your board's aesthetic using AI.",
+        targetId: 'tour-style',
+        title: "Customize Look",
+        description: "Change the look of the image/video containers in settings.",
         position: 'top'
     },
     {
-        targetId: 'tour-layout',
-        title: "Fluid Layouts",
-        description: "Switch instantly between a free-form organic canvas and a structured grid.",
+        targetId: 'tour-show',
+        title: "Show Mode",
+        description: "Switch to presentation Show mode for an immersive space presentation.",
         position: 'top'
     }
 ];

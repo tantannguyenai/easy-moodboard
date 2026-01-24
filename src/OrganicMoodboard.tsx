@@ -151,11 +151,11 @@ const DockButton = ({ onClick, icon: Icon, label, active = false, className = ""
     <button
         id={id}
         onClick={onClick}
-        className={`flex flex-col items-center justify-center w-12 h-12 rounded-xl transition-all duration-200 group relative 
+        className={`flex flex-col items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl transition-all duration-200 group relative 
       ${active ? 'bg-black text-white shadow-xl scale-105' : 'hover:bg-black/5 text-neutral-600 hover:text-black hover:scale-105'} 
       ${className}`}
     >
-        <Icon size={22} strokeWidth={1.5} />
+        <Icon size={20} className="md:w-[22px] md:h-[22px]" strokeWidth={1.5} />
         {label && (
             <span className="absolute -top-10 bg-white/80 backdrop-blur-md text-black/80 border border-black/5 shadow-sm text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
                 {label}
@@ -2100,8 +2100,8 @@ const OrganicMoodboard = () => {
                                 exit={{ opacity: 0 }}
                                 className="absolute inset-0 z-0"
                                 style={{
-                                    maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)',
-                                    WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)'
+                                    maskImage: windowWidth < 768 ? 'radial-gradient(ellipse at center, black 60%, transparent 100%)' : 'radial-gradient(ellipse at center, black 40%, transparent 80%)',
+                                    WebkitMaskImage: windowWidth < 768 ? 'radial-gradient(ellipse at center, black 60%, transparent 100%)' : 'radial-gradient(ellipse at center, black 40%, transparent 80%)'
                                 }}
                             >
                                 <MeshGradient palette={palette} />
@@ -2148,7 +2148,7 @@ const OrganicMoodboard = () => {
                         <button
                             id="sidebar-toggle"
                             onClick={() => setIsSidebarOpen(true)}
-                            className="absolute top-6 left-6 z-50 p-2 bg-white/50 hover:bg-white/80 backdrop-blur-md rounded-xl transition-all shadow-sm text-gray-600 hover:scale-105"
+                            className="absolute top-6 left-6 z-50 p-3 bg-white/50 hover:bg-white/80 backdrop-blur-md rounded-xl transition-all shadow-sm text-gray-600 hover:scale-105"
                         >
                             <ChevronRight size={20} />
                         </button>
@@ -2176,9 +2176,9 @@ const OrganicMoodboard = () => {
                                 </div>
                                 <div className="mb-8">
                                     {isExporting ? (
-                                        <div className="text-3xl font-normal tracking-tight text-gray-900 w-full mb-2 leading-tight">{title || "Visual Exploration 01"}</div>
+                                        <div className="text-xl md:text-3xl font-normal tracking-tight text-gray-900 w-full mb-2 leading-tight">{title || "Visual Exploration 01"}</div>
                                     ) : (
-                                        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Visual Exploration 01" className="text-3xl font-normal tracking-tight text-gray-900 bg-transparent border-none outline-none focus:ring-0 placeholder:text-gray-400/50 w-full mb-2 leading-tight" />
+                                        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Visual Exploration 01" className="text-xl md:text-3xl font-normal tracking-tight text-gray-900 bg-transparent border-none outline-none focus:ring-0 placeholder:text-gray-400/50 w-full mb-2 leading-tight" />
                                     )}
                                     <div className="flex items-center gap-2 text-xs text-gray-500">
                                         <span className="font-medium uppercase tracking-wide opacity-50">By</span>
@@ -2223,7 +2223,7 @@ const OrganicMoodboard = () => {
                                             isExporting ? (
                                                 <div key={i} className="px-3 py-1.5 bg-white/50 text-gray-800 rounded-lg text-xs font-medium border border-black/5 w-full text-left">{tag || "Tag"}</div>
                                             ) : (
-                                                <input key={i} value={tag} onChange={(e) => { const newTags = [...tags]; newTags[i] = e.target.value; setTags(newTags); }} placeholder="Tag" className="px-3 py-1.5 bg-white/40 text-gray-800 rounded-lg text-xs font-medium border border-black/5 shadow-sm outline-none w-full text-left backdrop-blur-md focus:bg-white placeholder:text-gray-400/50" />
+                                                <input key={i} value={tag} onChange={(e) => { const newTags = [...tags]; newTags[i] = e.target.value; setTags(newTags); }} placeholder="Tag" className="px-3 py-2.5 bg-white/40 text-gray-800 rounded-lg text-xs font-medium border border-black/5 shadow-sm outline-none w-full text-left backdrop-blur-md focus:bg-white placeholder:text-gray-400/50" />
                                             )
                                         ))}
                                     </div>
@@ -2515,7 +2515,7 @@ const OrganicMoodboard = () => {
                     {/* --- DOCK --- */}
                     {
                         !isExporting && (
-                            <div id="dock-controls" className="absolute bottom-4 left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-end gap-4 pointer-events-none">
+                            <div id="dock-controls" className="absolute bottom-6 left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-center md:items-end gap-4 pointer-events-none">
                                 <AnimatePresence>
                                     {showSettings && (
                                         <motion.div
@@ -2677,7 +2677,7 @@ const OrganicMoodboard = () => {
                                 </AnimatePresence>
 
                                 {/* UPDATED MENU: Frosted Light Theme */}
-                                <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border-[3px] border-white/20 max-w-full pointer-events-auto no-scrollbar transition-all duration-500 ease-in-out">
+                                <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border-[3px] border-white/20 max-w-full overflow-x-auto pointer-events-auto no-scrollbar transition-all duration-500 ease-in-out touch-pan-x">
                                     <AnimatePresence mode="wait" initial={false}>
                                         {isDockExpanded && (
                                             <motion.div
@@ -2734,13 +2734,14 @@ const OrganicMoodboard = () => {
                                                 <div className="w-px h-8 bg-black/10 mx-1" />
 
                                                 <div className="w-px h-8 bg-black/10 mx-1" />
-                                                <DockButton onClick={() => setShowSettings(!showSettings)} icon={SlidersHorizontal} label="Style" active={showSettings} />
+                                                <DockButton id="tour-style" onClick={() => setShowSettings(!showSettings)} icon={SlidersHorizontal} label="Style" active={showSettings} />
                                                 {/* ADDED ANIMATE BUTTON BACK */}
                                                 <div id="tour-layout" className="flex gap-2">
                                                     <DockButton onClick={() => { toggleLayoutMode('organic'); setViewMode('editor'); }} icon={InfinityIcon} label="Dynamic" active={layoutMode === 'organic' && viewMode === 'editor'} />
                                                     <DockButton onClick={() => { toggleLayoutMode('grid'); setViewMode('editor'); }} icon={Grid2X2} label="Grid" active={layoutMode === 'grid' && viewMode === 'editor'} />
                                                 </div>
                                                 <DockButton
+                                                    id="tour-show"
                                                     onClick={() => {
                                                         setViewMode('editor');
                                                         if (layoutMode === 'animate') {
@@ -2768,10 +2769,10 @@ const OrganicMoodboard = () => {
                             </div>
                         )
                     }
-                </div >
-            </div >
+                </div>
+            </div>
             <TourGuide onStepChange={handleTourStepChange} onComplete={() => setHasSeenTour(true)} />
-        </div >
+        </div>
     );
 };
 
