@@ -5,7 +5,7 @@ import html2canvas from 'html2canvas';
 import {
     Download, X, Plus, Type, SlidersHorizontal, Scaling, CaseUpper,
     Grid2X2, RefreshCw, ChevronLeft, ChevronRight,
-    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Infinity as InfinityIcon, RotateCw, Music, FileImage, Shuffle, Users
+    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Infinity as InfinityIcon, RotateCw, Music, FileImage, Shuffle, Users, Menu
 } from 'lucide-react';
 // Ensure this path matches where you put the file
 import { generateMoodImageFromBoard, generateBoardDescription } from './services/imageGenerator';
@@ -1103,6 +1103,7 @@ const OrganicMoodboard = () => {
     const [activeIndex, setActiveIndex] = useState(0);
     const [flippedItems, setFlippedItems] = useState<Set<string>>(new Set()); // Track flipped items
     const [isDockExpanded, setIsDockExpanded] = useState(true);
+    const [isTopMenuExpanded, setIsTopMenuExpanded] = useState(false); // Mobile collapse state for top menu
     const [hasSeenTour, setHasSeenTour] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false); // Track drag over state
 
@@ -2703,26 +2704,49 @@ const OrganicMoodboard = () => {
                     {!isExporting && (
                         <div className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2 pointer-events-none">
                             {/* Header Buttons */}
-                            <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/60 backdrop-blur-2xl shadow-xl border-[2px] border-white/20 pointer-events-auto">
-                                <DockButton
-                                    onClick={() => setViewMode(prev => prev === 'community' ? 'editor' : 'community')}
-                                    icon={Users}
-                                    label="Community"
-                                    active={viewMode === 'community'}
-                                />
-                                <DockButton
-                                    onClick={handleSaveToCommunity}
-                                    icon={Download}
-                                    label={window.innerWidth < 768 ? "Publish" : "Save to Community"}
-                                />
-                                <div className="w-px h-8 bg-black/10 mx-1" />
-                                <DockButton
-                                    id="tour-style"
-                                    onClick={() => setShowSettings(!showSettings)}
-                                    icon={SlidersHorizontal}
-                                    label="Style"
-                                    active={showSettings}
-                                />
+                            <div className="flex flex-col items-end gap-2 pointer-events-auto">
+                                {/* Mobile Toggle for Top Menu */}
+                                <div className="md:hidden">
+                                    <DockButton
+                                        onClick={() => setIsTopMenuExpanded(!isTopMenuExpanded)}
+                                        icon={isTopMenuExpanded ? X : Menu}
+                                        label={isTopMenuExpanded ? "Close" : "Menu"}
+                                        className="bg-white/60 backdrop-blur-xl shadow-lg border border-white/20"
+                                    />
+                                </div>
+
+                                {/* Menu Items: Always show on desktop, toggle on mobile */}
+                                <AnimatePresence>
+                                    {(isTopMenuExpanded || window.innerWidth >= 768) && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.9, y: -10, originY: 0 }}
+                                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                                            className="flex flex-col md:flex-row items-stretch md:items-center gap-2 p-1.5 rounded-2xl bg-white/60 backdrop-blur-2xl shadow-xl border-[2px] border-white/20 mt-2 md:mt-0"
+                                        >
+                                            <DockButton
+                                                onClick={() => setViewMode(prev => prev === 'community' ? 'editor' : 'community')}
+                                                icon={Users}
+                                                label="Community"
+                                                active={viewMode === 'community'}
+                                            />
+                                            <div className="w-full h-px md:w-px md:h-8 bg-black/10 mx-1" />
+                                            <DockButton
+                                                onClick={handleSaveToCommunity}
+                                                icon={Download}
+                                                label={window.innerWidth < 768 ? "Publish" : "Save to Community"}
+                                            />
+                                            <div className="w-full h-px md:w-px md:h-8 bg-black/10 mx-1" />
+                                            <DockButton
+                                                id="tour-style"
+                                                onClick={() => setShowSettings(!showSettings)}
+                                                icon={SlidersHorizontal}
+                                                label="Style"
+                                                active={showSettings}
+                                            />
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
 
                             {/* Settings Panel - Moved to Top Right */}
@@ -2886,7 +2910,11 @@ const OrganicMoodboard = () => {
                     {/* --- DOCK --- */}
                     {
                         !isExporting && (
-                            <div id="dock-controls" className="absolute bottom-6 left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-center md:items-end gap-4 pointer-events-none">
+                            <div
+                                id="dock-controls"
+                                className="absolute left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-center md:items-end gap-4 pointer-events-none transition-all duration-300"
+                                style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
+                            >
                                 {/* REMOVED SETTINGS PANEL FROM BOTTOM */}
 
                                 {/* UPDATED MENU: Frosted Light Theme */}
