@@ -49,8 +49,8 @@ export async function generateMoodImageFromBoard(
     return null;
   }
 
-  // Limit to 4 images to avoid payload limits/latency
-  const selectedUrls = referenceImageUrls.slice(0, 4);
+  // Limit to 4 most recent images to avoid payload limits/latency
+  const selectedUrls = referenceImageUrls.slice(-4);
 
   // Convert all URLs to base64 inlineData objects
   const imageParts = await Promise.all(
