@@ -5,7 +5,7 @@ import html2canvas from 'html2canvas';
 import {
     Download, X, Plus, Type, SlidersHorizontal, Scaling, CaseUpper,
     Grid2X2, RefreshCw, ChevronLeft, ChevronRight,
-    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Infinity as InfinityIcon, RotateCw, Music, FileImage, Shuffle, Users, Menu
+    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Infinity as InfinityIcon, RotateCw, Music, FileImage, Shuffle, Menu
 } from 'lucide-react';
 // Ensure this path matches where you put the file
 import { generateMoodImageFromBoard, generateBoardDescription } from './services/imageGenerator';
@@ -14,11 +14,7 @@ import { TourGuide } from './components/TourGuide';
 import { PDFFlipBook } from './components/PDFFlipBook'; // Import PDF component
 import { ShaderBackground } from './components/ShaderBackground'; // Import ShaderBackground
 import { DissolveEffect } from './components/DissolveEffect'; // Import DissolveEffect
-import { saveBoard } from './services/storage'; // Import storage service
-import type { SavedMoodboard } from './services/storage'; // Import type separately
-import CommunityGallery from './components/CommunityGallery'; // Import CommunityGallery
 
-import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { pdfjs } from 'react-pdf';
 
 // Configure worker for PDF processing
@@ -36,12 +32,8 @@ const QUOTES = [
 
 
 const FONTS = [
-    { name: "Piazzolla", family: "'Piazzolla', serif" },
-    { name: "Modern Sans", family: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif" },
-    { name: "Elegant Serif", family: "Georgia, Cambria, 'Times New Roman', Times, serif" },
-    { name: "Tech Mono", family: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
-    { name: "Clean Rounded", family: "'Arial Rounded MT Bold', 'Helvetica Rounded', Arial, sans-serif" },
-    { name: "Classic Print", family: "'Courier New', Courier, monospace" },
+    { name: "Geist", family: "'Geist Variable', ui-sans-serif, system-ui, sans-serif" },
+    { name: "Geist Mono", family: "'Geist Mono Variable', ui-monospace, monospace" },
 ];
 
 // --- Types ---
@@ -65,8 +57,6 @@ export type BoardItem = {
 // --- STYLES FOR EFFECTS ---
 const Styles = () => (
     <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Piazzolla:wght@400;500&display=swap');
-    @import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@500&display=swap');
     @keyframes rainbow-pulse {
       0% { filter: hue-rotate(0deg) blur(15px); opacity: 0.4; }
       50% { filter: hue-rotate(180deg) blur(20px); opacity: 0.6; transform: scale(1.02); }
@@ -1144,7 +1134,6 @@ const OrganicMoodboard = () => {
 
     // View Mode State
     const [viewMode, setViewMode] = useState<'editor' | 'community'>('editor');
-    const [currentBoardId, setCurrentBoardId] = useState<string | null>(null);
 
     // Style State
     const [dashboardRadius, setDashboardRadius] = useState(32);
@@ -1666,12 +1655,11 @@ const OrganicMoodboard = () => {
         }
     };
 
-    const handleSaveToCommunity = async () => {
-        setIsExporting(true); // Hide UI controls
+    const handleSave = async () => {
+        setIsExporting(true);
         setIsProcessing(true);
         setProgress(0);
 
-        // Wait for UI to hide and animations to reset
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         try {
@@ -1679,157 +1667,27 @@ const OrganicMoodboard = () => {
             if (!element) throw new Error("Canvas not found");
 
             const width = element.offsetWidth;
-            const height = element.offsetHeight;
+            const scale = Math.min(2, 1200 / width);
 
-            // Constrain resolution for performance and file size
-            // A width of ~600px is decent for community grid
-            const targetWidth = 600;
-            const scale = targetWidth / width;
-            // Ensure height is even (video encoding requirement usually, specifically h264 sometimes dislikes odd dimensions, but safer to be even)
-            let targetHeight = Math.round(height * scale);
-            if (targetHeight % 2 !== 0) targetHeight += 1;
-
-            // Muxer configuration
-            const muxer = new Muxer({
-                target: new ArrayBufferTarget(),
-                video: {
-                    codec: 'avc', // H.264
-                    width: targetWidth,
-                    height: targetHeight
-                },
-                fastStart: 'in-memory'
+            const canvas = await html2canvas(element, {
+                scale,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: bgMode === 'solid' ? background : '#FFFFFF',
+                logging: false
             });
 
-            // VideoEncoder configuration
-            const videoEncoder = new VideoEncoder({
-                output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-                error: (e) => console.error(e)
-            });
-
-            videoEncoder.configure({
-                codec: 'avc1.42001f', // Baseline profile
-                width: targetWidth,
-                height: targetHeight,
-                bitrate: 1_000_000, // 1 Mbps
-                framerate: 10
-            });
-
-            // Capture Loop
-            // We'll capture 20 frames at 100ms interval = 2 seconds of video
-            const totalFrames = 20;
-            const frameDuration = 100; // ms
-            const fps = 10;
-            const frameDurationMicroseconds = 1_000_000 / fps;
-
-            for (let i = 0; i < totalFrames; i++) {
-                setProgress(Math.round((i / totalFrames) * 100));
-
-                // Capture Frame
-                const canvas = await html2canvas(element, {
-                    scale: scale,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: bgMode === 'solid' ? background : '#FFFFFF',
-                    logging: false
-                });
-
-                // Create VideoFrame from canvas
-                const frame = new VideoFrame(canvas, { timestamp: i * frameDurationMicroseconds });
-
-                // Encode
-                videoEncoder.encode(frame, { keyFrame: i % 10 === 0 });
-                frame.close(); // Important to close frames to avoid memory leaks
-
-                // Wait for next frame
-                await new Promise(r => setTimeout(r, frameDuration));
-            }
-
-            // Finalize
-            await videoEncoder.flush();
-            muxer.finalize();
-            const buffer = muxer.target.buffer;
-
-            // Create Blob and converting to Base64
-            const blob = new Blob([buffer], { type: 'video/mp4' });
-
-            const reader = new FileReader();
-            const thumbnail = await new Promise<string>((resolve) => {
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(blob);
-            });
-
-            // Save Board
-            const boardData: SavedMoodboard = {
-                id: currentBoardId || Math.random().toString(36).substr(2, 9),
-                title: title || 'Untitled Board',
-                author: author || 'Anonymous',
-                thumbnail: thumbnail, // MP4 Data URL
-                timestamp: Date.now(),
-                items: items,
-                settings: {
-                    palette,
-                    background,
-                    bgMode,
-                    shaderMode,
-                    layoutMode,
-                    imageRadius,
-                    borderThickness,
-                    showBorders,
-                    showGrid,
-                    gridType,
-                    quoteSize,
-                    enableMotionBlur,
-                    motionBlurIntensity,
-                    shaderItemId
-                }
-            };
-
-            await saveBoard(boardData);
-            alert("Saved to community successfully! (MP4 thumbnail created)");
-
+            const link = document.createElement('a');
+            link.download = `moodboard-${(title || 'untitled').replace(/[^a-zA-Z0-9-_.]/g, '-')}-${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
         } catch (error) {
             console.error("Save failed", error);
-            alert("Failed to save to community. This browser might not support WebCodecs MP4 encoding.");
+            alert("Failed to save snapshot.");
         } finally {
             setIsExporting(false);
             setIsProcessing(false);
         }
-    };
-
-    const handleLoadBoard = (board: SavedMoodboard) => {
-        setItems(board.items);
-        setTitle(board.title);
-        setAuthor(board.author);
-        if (board.settings) {
-            setPalette(board.settings.palette || []);
-            setBackground(board.settings.background || '#FFFFFF');
-            setBgMode(board.settings.bgMode || 'gradient');
-            setShaderMode(board.settings.shaderMode || 'soft');
-            // setLayoutMode(board.settings.layoutMode || 'organic'); // Keep current layout or load? User might prefer exploring. Let's load it.
-            // Actually, keep it flexible.
-            if (board.settings.layoutMode) setLayoutMode(board.settings.layoutMode);
-
-            setImageRadius(board.settings.imageRadius ?? 12);
-            setBorderThickness(board.settings.borderThickness ?? 10);
-            setShowBorders(board.settings.showBorders ?? true);
-            setShowGrid(board.settings.showGrid ?? true);
-            setGridType(board.settings.gridType || 'dot');
-            setQuoteSize(board.settings.quoteSize ?? 20);
-            setEnableMotionBlur(board.settings.enableMotionBlur ?? false);
-            setMotionBlurIntensity(board.settings.motionBlurIntensity ?? 0.5);
-            setShaderItemId(board.settings.shaderItemId || null);
-        }
-
-        setCurrentBoardId(board.id);
-        setViewMode('editor');
-    };
-
-    const handleCreateNew = () => {
-        setItems([]);
-        setTitle('');
-        setAuthor('');
-        setCurrentBoardId(null);
-        setViewMode('editor');
     };
 
     const handleAiGenerate = async () => {
@@ -2339,7 +2197,7 @@ const OrganicMoodboard = () => {
                                 </div>
                                 <div className="mb-8 flex-1">
                                     <div className="flex items-center justify-between mb-3">
-                                        <h3 className="text-[11px] font-medium text-gray-500 tracking-wide opacity-60" style={{ fontFamily: "'Public Sans', sans-serif" }}>Description</h3>
+                                        <h3 className="text-[11px] font-medium text-gray-500 tracking-wide opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Description</h3>
                                         {!isExporting && (
                                             <button
                                                 id="tour-ai-desc" // Tour Target
@@ -2365,7 +2223,7 @@ const OrganicMoodboard = () => {
                                     )}
                                 </div>
                                 <div className="mb-8">
-                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Public Sans', sans-serif" }}>Keywords</h3>
+                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Keywords</h3>
                                     <div className="flex flex-wrap gap-2">
                                         {tags.map((tag, i) => (
                                             isExporting ? (
@@ -2377,7 +2235,7 @@ const OrganicMoodboard = () => {
                                     </div>
                                 </div>
                                 <div className="mt-auto">
-                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Public Sans', sans-serif" }}>Palette</h3>
+                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Palette</h3>
                                     <div className="grid grid-cols-3 gap-2">
                                         {palette.map((color, i) => (
                                             <div
@@ -2687,16 +2545,6 @@ const OrganicMoodboard = () => {
                         )}
                     </div>
 
-                    {/* --- COMMUNITY GALLERY OVERLAY --- */}
-                    {viewMode === 'community' && (
-                        <div className="absolute inset-0 z-[9000] bg-[#f8f9fa]">
-                            <CommunityGallery
-                                onLoadBoard={handleLoadBoard}
-                                onCreateNew={handleCreateNew}
-                            />
-                        </div>
-                    )}
-
                     {/* --- DOCK --- */}
 
 
@@ -2725,16 +2573,9 @@ const OrganicMoodboard = () => {
                                             className="flex flex-col md:flex-row items-stretch md:items-center gap-2 p-1.5 rounded-2xl bg-white/60 backdrop-blur-2xl shadow-xl border-[2px] border-white/20 mt-2 md:mt-0"
                                         >
                                             <DockButton
-                                                onClick={() => setViewMode(prev => prev === 'community' ? 'editor' : 'community')}
-                                                icon={Users}
-                                                label="Community"
-                                                active={viewMode === 'community'}
-                                            />
-                                            <div className="w-full h-px md:w-px md:h-8 bg-black/10 mx-1" />
-                                            <DockButton
-                                                onClick={handleSaveToCommunity}
+                                                onClick={handleSave}
                                                 icon={Download}
-                                                label={window.innerWidth < 768 ? "Publish" : "Save to Community"}
+                                                label={window.innerWidth < 768 ? "Save" : "Save"}
                                             />
                                             <div className="w-full h-px md:w-px md:h-8 bg-black/10 mx-1" />
                                             <DockButton

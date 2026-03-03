@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useEffect, useRef } from 'react';
+import { useState, forwardRef, useEffect, useRef, type FC, type ReactNode } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import HTMLFlipBook from 'react-pageflip';
 import { Loader } from 'lucide-react';
@@ -13,7 +13,7 @@ interface PDFFlipBookProps {
     showBorders?: boolean;
     borderThickness?: number;
     imageRadius?: number;
-    children?: React.ReactNode;
+    children?: ReactNode;
     previewOnly?: boolean;
     onAspectRatioChange?: (ratio: number) => void;
 }
@@ -28,17 +28,16 @@ const PageWrapper = forwardRef<HTMLDivElement, any>((props, ref) => {
 });
 PageWrapper.displayName = 'PageWrapper';
 
-export const PDFFlipBook: React.FC<PDFFlipBookProps> = ({
-    file,
-    width,
-    height,
-    showBorders = false,
-    borderThickness = 0,
-    imageRadius = 0,
-    children,
-    previewOnly = false,
-    onAspectRatioChange
-}) => {
+export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
+    const {
+        file,
+        showBorders = false,
+        borderThickness = 0,
+        imageRadius = 0,
+        children,
+        previewOnly = false,
+        onAspectRatioChange,
+    } = props;
     // State for exact container fitting
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });

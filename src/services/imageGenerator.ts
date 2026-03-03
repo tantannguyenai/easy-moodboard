@@ -1,7 +1,20 @@
 // src/services/imageGenerator.ts
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const MODEL_NAME = "gemini-2.5-flash-image-preview"; // The "Nano Banana" model
+
+const IMAGE_MODEL_CANDIDATES = [
+  import.meta.env.VITE_GEMINI_IMAGE_MODEL,
+  // Current (2026) Gemini image generation preview models (best-effort fallbacks).
+  "gemini-3.1-flash-image-preview",
+  "gemini-3-pro-image-preview",
+  "gemini-2.5-flash-image",
+  // Some projects only have access to base Flash; keep as a last resort.
+  "gemini-2.5-flash",
+].filter(Boolean) as string[];
+
+function buildGenerateContentUrl(modelName: string, apiKey: string) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+}
 
 // Helper to fetch blob URL and convert to Base64
 async function urlToBase64(url: string): Promise<string | null> {
@@ -64,38 +77,50 @@ export async function generateMoodImageFromBoard(
   const promptText = `Generate a new moodboard image that perfectly blends the visual style, color palette, and atmospheric vibe of these reference images. Create something new that feels like it belongs in this collection.`;
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`,
-      {
+    const requestBody = {
+      contents: [
+        {
+          parts: [{ text: promptText }, ...validImageParts],
+        },
+      ],
+      generationConfig: {
+        // Some Gemini endpoints expect TEXT+IMAGE even if we only care about IMAGE.
+        responseModalities: ["TEXT", "IMAGE"],
+        candidateCount: 1,
+      },
+    };
+
+    let lastError: unknown = null;
+
+    for (const modelName of IMAGE_MODEL_CANDIDATES) {
+      const response = await fetch(buildGenerateContentUrl(modelName, API_KEY), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: promptText },
-              ...validImageParts // Spread the image parts into the request
-            ]
-          }],
-          generationConfig: {
-            responseModalities: ["IMAGE"],
-            candidateCount: 1
-          }
-        }),
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+
+        // If the model name is unknown / not supported, try the next candidate.
+        if (response.status === 404 || errText.includes("NOT_FOUND") || errText.includes("is not found")) {
+          lastError = new Error(`Model ${modelName} not available: ${errText}`);
+          continue;
+        }
+
+        throw new Error(`Gemini image generation failed for ${modelName}: ${errText}`);
       }
-    );
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(errText);
+      const data = await response.json();
+      const parts = data.candidates?.[0]?.content?.parts ?? [];
+      const imagePart = parts.find((p: any) => p?.inlineData?.data);
+
+      if (imagePart?.inlineData?.data) {
+        return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+      }
     }
 
-    const data = await response.json();
-    const imagePart = data.candidates?.[0]?.content?.parts?.[0];
-
-    if (imagePart?.inlineData?.data) {
-      return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
-    }
-
+    console.error("No compatible Gemini image model succeeded.", lastError);
     return null;
   } catch (error) {
     console.error("Generation failed:", error);

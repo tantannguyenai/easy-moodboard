@@ -5,7 +5,12 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ["'Geist Variable'", 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ["'Geist Mono Variable'", 'ui-monospace', 'monospace'],
+      },
+    },
   },
   plugins: [],
 }
