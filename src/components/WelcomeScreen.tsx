@@ -179,7 +179,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter }) => {
             {/* Platform description - bottom */}
             <p className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center text-sm text-gray-400 max-w-xl px-6 leading-relaxed">
                 {(
-                    'Mood is a creative canvas for curating visual inspiration in a new way. <br/> Make with love by Tan Tan.    '
+                    'Mood is a creative canvas for curating visual inspiration in a new way. Make with love by Tan Tan.    '
                 )
                     .split(/\s+/)
                     .map((word, i) => (

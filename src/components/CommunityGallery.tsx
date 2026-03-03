@@ -105,7 +105,7 @@ const CommunityGallery: React.FC<CommunityGalleryProps> = ({ onLoadBoard, onCrea
                                 {/* Info */}
                                 <div className="p-6 flex-1 flex flex-col justify-between">
                                     <div>
-                                        <h3 className="text-xl font-medium text-gray-900 mb-1 line-clamp-1 group-hover:text-[#8A673F] transition-colors">{board.title || "Untitled"}</h3>
+                                        <h3 className="text-xl font-medium text-gray-900 mb-1 line-clamp-1 group-hover:text-[#18181b] transition-colors">{board.title || "Untitled"}</h3>
                                         <div className="flex items-center gap-2 text-sm text-gray-500">
                                             <User size={14} />
                                             <span className="line-clamp-1">{board.author || "Anonymous"}</span>

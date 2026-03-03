@@ -20,6 +20,13 @@ import { pdfjs } from 'react-pdf';
 // Configure worker for PDF processing
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+// --- Helpers ---
+const rgbToHex = (r: number, g: number, b: number) =>
+    '#' + [r, g, b].map(x => {
+        const h = Math.max(0, Math.min(255, Math.round(x))).toString(16);
+        return h.length === 1 ? '0' + h : h;
+    }).join('');
+
 // --- Constants ---
 const QUOTES = [
     { text: "Simplicity is the ultimate sophistication.", author: "Leonardo da Vinci" },
@@ -1225,6 +1232,13 @@ const OrganicMoodboard = () => {
         return () => window.removeEventListener('paste', handlePaste);
     }, [items, layoutMode, globalZIndex]); // Dependencies for processFiles/processUrls logic execution context
 
+    // Run palette extraction when the board already has image/video on load (e.g. pre-filled or restored)
+    useEffect(() => {
+        const hasMedia = items.some(i => i.type === 'image' || i.type === 'video');
+        if (!hasMedia) return;
+        const t = setTimeout(() => updatePaletteFromAllImages(), 400);
+        return () => clearTimeout(t);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps -- run once on mount when board has media
 
     // --- Helpers ---
 
@@ -1265,7 +1279,7 @@ const OrganicMoodboard = () => {
                     const p = ctx.getImageData(pt[0], pt[1], 1, 1).data;
                     if (p[0] > 245 && p[1] > 245 && p[2] > 245) continue; // Skip white
                     if (p[0] < 15 && p[1] < 15 && p[2] < 15) continue; // Skip black
-                    collectedColors.push(`rgb(${p[0]}, ${p[1]}, ${p[2]})`);
+                    collectedColors.push(rgbToHex(p[0], p[1], p[2]));
                 } catch (e) { console.warn("Canvas read error", e); }
             }
         };
@@ -1294,7 +1308,15 @@ const OrganicMoodboard = () => {
                     video.currentTime = 0.5; // Capture frame at 0.5s
                 };
 
+                video.onerror = () => {
+                    console.warn("Could not load video for palette extraction:", candidate.url);
+                    finish();
+                };
+
+                // Fallback if onseeked never fires (e.g. not seekable)
+                const fallback = setTimeout(() => finish(), 3000);
                 video.onseeked = () => {
+                    clearTimeout(fallback);
                     const canvas = document.createElement('canvas');
                     canvas.width = 50; canvas.height = 50;
                     const ctx = canvas.getContext('2d');
@@ -1302,11 +1324,6 @@ const OrganicMoodboard = () => {
                         ctx.drawImage(video, 0, 0, 50, 50);
                         extractColorsFromCanvas(ctx);
                     }
-                    finish();
-                };
-
-                video.onerror = () => {
-                    console.warn("Could not load video for palette extraction:", candidate.url);
                     finish();
                 };
 
@@ -2235,7 +2252,12 @@ const OrganicMoodboard = () => {
                                     </div>
                                 </div>
                                 <div className="mt-auto">
-                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Palette</h3>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="text-[11px] font-medium text-gray-500 tracking-wide opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Palette</h3>
+                                        {items.some(i => i.type === 'image' || i.type === 'video') && (
+                                            <button type="button" onClick={() => updatePaletteFromAllImages([], false)} className="text-[10px] text-gray-500 hover:text-[#18181b] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#18181b]/10 transition-colors" title="Extract colors from board images">From board</button>
+                                        )}
+                                    </div>
                                     <div className="grid grid-cols-3 gap-2">
                                         {palette.map((color, i) => (
                                             <div
@@ -2603,15 +2625,15 @@ const OrganicMoodboard = () => {
                                         <div className="space-y-5">
                                             <div className="space-y-2">
                                                 <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Dashboard Radius</span><span className="text-gray-900 font-mono text-xs">{dashboardRadius}px</span></div>
-                                                <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
                                             </div>
                                             <div className="space-y-2">
                                                 <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Item Radius</span><span className="text-gray-900 font-mono text-xs">{imageRadius}px</span></div>
-                                                <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
                                             </div>
                                             <div className="space-y-2">
                                                 <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Border Thickness</span><span className="text-gray-900 font-mono text-xs">{borderThickness}px</span></div>
-                                                <input type="range" min="0" max="40" value={borderThickness} onChange={(e) => setBorderThickness(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                <input type="range" min="0" max="40" value={borderThickness} onChange={(e) => setBorderThickness(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
                                             </div>
                                             <div className="flex justify-between items-center">
                                                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Show Grid</span>
@@ -2619,14 +2641,14 @@ const OrganicMoodboard = () => {
                                                     {showGrid && (
                                                         <button
                                                             onClick={() => setGridType(prev => prev === 'square' ? 'dot' : 'square')}
-                                                            className="text-[10px] font-bold uppercase tracking-wide text-gray-400 hover:text-[#8A673F] transition-colors mr-2"
+                                                            className="text-[10px] font-bold uppercase tracking-wide text-gray-400 hover:text-[#18181b] transition-colors mr-2"
                                                         >
                                                             {gridType === 'square' ? 'Square' : 'Dot'}
                                                         </button>
                                                     )}
                                                     <button
                                                         onClick={() => setShowGrid(!showGrid)}
-                                                        className={`w-10 h-5 rounded-full relative transition-colors ${showGrid ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
+                                                        className={`w-10 h-5 rounded-full relative transition-colors ${showGrid ? 'bg-[#18181b]' : 'bg-gray-200'}`}
                                                     >
                                                         <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${showGrid ? 'left-6' : 'left-1'}`} />
                                                     </button>
@@ -2636,9 +2658,9 @@ const OrganicMoodboard = () => {
                                             <div className="space-y-3">
                                                 <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Background</span>
                                                     <div className="flex gap-1">
-                                                        <button onClick={() => { setBgMode('solid'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Solid</button>
-                                                        <button onClick={() => { setBgMode('gradient'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Gradient</button>
-                                                        <button onClick={() => { setBgMode('shader'); setIsShaderMode(true); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'shader' ? 'bg-[#8A673F] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Shader</button>
+                                                        <button onClick={() => { setBgMode('solid'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-[#18181b] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Solid</button>
+                                                        <button onClick={() => { setBgMode('gradient'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-[#18181b] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Gradient</button>
+                                                        <button onClick={() => { setBgMode('shader'); setIsShaderMode(true); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'shader' ? 'bg-[#18181b] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Shader</button>
                                                     </div>
                                                 </div>
                                                 {bgMode === 'gradient' && (
@@ -2649,7 +2671,7 @@ const OrganicMoodboard = () => {
                                                                 <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
                                                             </motion.div>
                                                         ))}
-                                                        <button onClick={() => updatePaletteFromAllImages([], true)} className="ml-auto text-[10px] text-gray-500 hover:text-[#8A673F] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#8A673F]/10 transition-colors"><RefreshCw size={10} /> Shuffle</button>
+                                                        <button onClick={() => updatePaletteFromAllImages([], true)} className="ml-auto text-[10px] text-gray-500 hover:text-[#18181b] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#18181b]/10 transition-colors"><RefreshCw size={10} /> Shuffle</button>
                                                     </div>
                                                 )}
                                                 {bgMode === 'solid' && (
@@ -2697,7 +2719,7 @@ const OrganicMoodboard = () => {
                                                             <span className="text-xs font-medium text-gray-600">Motion Blur</span>
                                                             <button
                                                                 onClick={() => setEnableMotionBlur(!enableMotionBlur)}
-                                                                className={`w-10 h-5 rounded-full relative transition-colors ${enableMotionBlur ? 'bg-[#8A673F]' : 'bg-gray-200'}`}
+                                                                className={`w-10 h-5 rounded-full relative transition-colors ${enableMotionBlur ? 'bg-[#18181b]' : 'bg-gray-200'}`}
                                                             >
                                                                 <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${enableMotionBlur ? 'left-6' : 'left-1'}`} />
                                                             </button>
@@ -2715,7 +2737,7 @@ const OrganicMoodboard = () => {
                                                                     step="0.01"
                                                                     value={motionBlurIntensity}
                                                                     onChange={(e) => setMotionBlurIntensity(parseFloat(e.target.value))}
-                                                                    className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors"
+                                                                    className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors"
                                                                 />
                                                             </div>
                                                         )}
@@ -2727,11 +2749,11 @@ const OrganicMoodboard = () => {
                                                 <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Elements</h4>
                                                 <div className="space-y-2">
                                                     <div className="flex justify-between items-center"><span className="text-xs font-medium text-gray-600">Text Size</span><span className="text-[10px] font-mono text-gray-500">{quoteSize}px</span></div>
-                                                    <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#8A673F] hover:bg-gray-300 transition-colors" />
+                                                    <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
                                                 </div>
                                                 <div className="flex items-center justify-between pt-1">
                                                     <span className="text-xs font-medium text-gray-600">Image Frames</span>
-                                                    <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-[#8A673F]' : 'bg-gray-200'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-white' : 'bg-white'}`} /></button>
+                                                    <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-[#18181b]' : 'bg-gray-200'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-white' : 'bg-white'}`} /></button>
                                                 </div>
                                                 <div className="flex items-center justify-between pt-1">
                                                     <span className="text-xs font-medium text-gray-600">Typography</span>

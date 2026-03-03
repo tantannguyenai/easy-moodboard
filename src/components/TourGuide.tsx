@@ -180,8 +180,8 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
                     {targetRect && targetRect.step === currentStep && currentStep > 0 && (
                         <motion.div
                             layoutId="tour-highlight"
-                            className="fixed z-[10000] pointer-events-none border-2 rounded-xl shadow-[0_0_20px_rgba(138,103,63,0.4)]"
-                            style={{ borderColor: '#8A673F' }}
+                            className="fixed z-[10000] pointer-events-none border-2 rounded-xl shadow-[0_0_20px_rgba(24,24,27,0.4)]"
+                            style={{ borderColor: '#18181b' }}
                             initial={false}
                             animate={{
                                 top: targetRect.rect.top - 4,
@@ -217,7 +217,7 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
 
                         <div className="flex flex-col gap-3">
                             <div className="flex items-center gap-2">
-                                <span className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold" style={{ backgroundColor: 'rgba(138,103,63,0.1)', color: '#8A673F' }}>
+                                <span className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold" style={{ backgroundColor: 'rgba(24,24,27,0.1)', color: '#18181b' }}>
                                     {currentStep + 1}
                                 </span>
                                 <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
