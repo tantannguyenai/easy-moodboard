@@ -3,17 +3,26 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, usePresence, useMotionValue, useVelocity, useTransform, useSpring, animate } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import {
-    Download, X, Plus, Type, SlidersHorizontal, Scaling, CaseUpper,
-    Grid2X2, RefreshCw, ChevronLeft, ChevronRight,
-    Copy, Play, Pause, Sparkles as MagicIcon, Loader, Infinity as InfinityIcon, RotateCw, Music, FileImage, Shuffle, Menu
+    Download, X, Plus, Type, SlidersHorizontal, Scaling,
+    ChevronLeft, ChevronRight,
+    Copy, Play, Pause, Loader, RotateCw, Music, FileImage,
+    Image as ImageIcon, Video
 } from 'lucide-react';
 // Ensure this path matches where you put the file
-import { generateMoodImageFromBoard, generateBoardDescription } from './services/imageGenerator';
-import MoodLogo from '../mood/src/assets/moodlogo.svg';
+import { generateMoodImageFromBoard } from './services/imageGenerator';
+
+import FlowerTulipIcon from './assets/flower-tulip.svg';
+import FlowerTulipGrayIcon from './assets/flower-tulip-gray.svg';
+import ShuffleSimpleIcon from './assets/shuffle-simple.svg';
+import ShuffleSimpleBlackIcon from './assets/shuffle-simple-black.svg';
+import SlideshowIcon from './assets/slideshow.svg';
+import SlideshowBlackIcon from './assets/slideshow-black.svg';
+const MoodLogo = "/mood-logo.svg";
 import { TourGuide } from './components/TourGuide';
 import { PDFFlipBook } from './components/PDFFlipBook'; // Import PDF component
 import { ShaderBackground } from './components/ShaderBackground'; // Import ShaderBackground
 import { DissolveEffect } from './components/DissolveEffect'; // Import DissolveEffect
+import { MeshGradient as PaperMeshGradient } from '@paper-design/shaders-react';
 
 import { pdfjs } from 'react-pdf';
 
@@ -26,6 +35,104 @@ const rgbToHex = (r: number, g: number, b: number) =>
         const h = Math.max(0, Math.min(255, Math.round(x))).toString(16);
         return h.length === 1 ? '0' + h : h;
     }).join('');
+
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result) return { h: 0, s: 0, l: 1 };
+    let r = parseInt(result[1], 16) / 255, g = parseInt(result[2], 16) / 255, b = parseInt(result[3], 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0, l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+            case g: h = ((b - r) / d + 2) / 6; break;
+            default: h = ((r - g) / d + 4) / 6; break;
+        }
+    }
+    return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+    s /= 100; l /= 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n: number) => {
+        const k = (n + h / 30) % 12;
+        return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    };
+    return rgbToHex(Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255));
+}
+
+// Minimal color picker: circle trigger + popover with only hue/saturation UI (no RGB)
+const MinimalColorPicker = ({ value, onChange }: { value: string; onChange: (hex: string) => void }) => {
+    const [open, setOpen] = useState(false);
+    const popRef = useRef<HTMLDivElement>(null);
+    const { h, s, l } = hexToHsl(value);
+
+    useEffect(() => {
+        if (!open) return;
+        const close = (e: MouseEvent) => {
+            if (popRef.current && !popRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, [open]);
+
+    const handleHue = (e: React.MouseEvent<HTMLDivElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        onChange(hslToHex(x * 360, s, l));
+    };
+    const handleSL = (e: React.MouseEvent<HTMLDivElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+        const newS = x * 100;
+        const newL = (1 - y) * 100;
+        onChange(hslToHex(h, newS, newL));
+    };
+
+    return (
+        <div className="relative" ref={popRef}>
+            <button
+                type="button"
+                onClick={() => setOpen(!open)}
+                className="w-3 h-3 rounded-full border border-[#d5d5d5] cursor-pointer overflow-hidden flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-[#1e1e1e] focus:ring-offset-1"
+                style={{ backgroundColor: value }}
+                aria-label="Pick border color"
+            />
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute left-0 top-full mt-2 z-[10000] p-2 rounded-[12px] bg-white border border-[#e1e1e1] shadow-[0_8px_24px_rgba(0,0,0,0.1)]"
+                    >
+                        <div
+                            className="w-32 h-20 rounded-[8px] cursor-crosshair mb-2 border border-[#e6e6e6]"
+                            style={{
+                                background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hslToHex(h, 100, 50)})`
+                            }}
+                            onMouseDown={(e) => { e.preventDefault(); handleSL(e); }}
+                            onMouseMove={(e) => { if (e.buttons === 1) handleSL(e); }}
+                        />
+                        <div
+                            className="w-32 h-2 rounded-full cursor-pointer border border-[#e6e6e6]"
+                            style={{
+                                background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)'
+                            }}
+                            onMouseDown={(e) => { e.preventDefault(); handleHue(e); }}
+                            onMouseMove={(e) => { if (e.buttons === 1) handleHue(e); }}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};
 
 // --- Constants ---
 const QUOTES = [
@@ -59,6 +166,128 @@ export type BoardItem = {
     aspectRatio?: number;
     isLoading?: boolean; // Added for loading state
     isGenerated?: boolean; // Added to track AI generated images
+};
+
+const LOADING_WORDS = ['Generating', 'Curating', 'Crafting'];
+
+// Generating card — matches Paper design (node 33-0): mesh gradient background, layered gradient orb, breathing + gradient border + loading text
+const GeneratingCard: React.FC<{ borderRadius?: number }> = ({ borderRadius = 20 }) => {
+    const [wordIndex, setWordIndex] = useState(0);
+    useEffect(() => {
+        const t = setInterval(() => setWordIndex((i) => (i + 1) % LOADING_WORDS.length), 3200);
+        return () => clearInterval(t);
+    }, []);
+    return (
+        <div
+            className="relative w-full h-full flex items-center justify-center"
+            style={{ borderRadius }}
+        >
+            <motion.div
+                className="relative flex flex-col items-center justify-center overflow-hidden gen-card-mesh-bg"
+                style={{
+                    borderRadius,
+                    minHeight: 280,
+                    height: 280,
+                    width: 340,
+                    paddingTop: 41,
+                    paddingBottom: 40,
+                    paddingLeft: 100,
+                    paddingRight: 100,
+                    gap: 32,
+                }}
+                animate={{
+                    y: [0, -8, 0, -4, 0],
+                    rotate: [0, 1.2, 0, -1.2, 0],
+                }}
+                transition={{
+                    duration: 5,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                }}
+            >
+                {/* Paper Mesh Gradient shader background — from Paper file node 2B-0 */}
+                <div className="absolute rounded-[inherit] bg-white" style={{ top: -20, left: -20, right: -20, bottom: -20, borderRadius, filter: 'blur(20px) contrast(110%)' }}>
+                    <PaperMeshGradient
+                        width={380}
+                        height={320}
+                        fit="cover"
+                        colors={['#C5DBFF', '#FBFDF3', '#FFBD7B', '#FFFFFF', '#FF70D9', '#F1F4FF', '#FF70D9']}
+                        distortion={0.12}
+                        swirl={1}
+                        grainMixer={0.31}
+                        grainOverlay={0.12}
+                        speed={1.5}
+                        scale={1.44}
+                    />
+                </div>
+                {/* Animated gradient border (branding-style conic spin) */}
+                <div
+                    className="gen-card-border"
+                    style={{ borderRadius }}
+                />
+                {/* Gradient frame — each layer animated with scale only (no position drift) to preserve original layout ratio */}
+                <div className="relative flex-shrink-0 z-10" style={{ width: 140, height: 117 }}>
+                    {/* Layer 1: 140×117 — blur 10px — centered (50%, 50%) */}
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                        <motion.div
+                            className="rounded-[38px]"
+                            style={{
+                                width: 140,
+                                height: 117,
+                                filter: 'blur(10px)',
+                                backgroundImage: 'linear-gradient(in oklab 180deg, oklab(95.6% -0.007 -0.020) 0%, oklab(93% 0.009 -0.034) 50.42%, oklab(81.6% 0.065 0.108) 100.57%)',
+                            }}
+                            animate={{ scale: [1, 1.12, 1] }}
+                            transition={{ scale: { duration: 2.6, repeat: Infinity, ease: 'easeInOut' } }}
+                        />
+                    </div>
+                    {/* Layer 2: 124×102 — blur 5px — center at (50%, 50% - 2.5px) */}
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ marginTop: -2.5 }}>
+                        <motion.div
+                            className="rounded-[38px]"
+                            style={{
+                                width: 124,
+                                height: 102,
+                                filter: 'blur(5px)',
+                                backgroundImage: 'linear-gradient(in oklab 180deg, oklab(100% .0001 0 / 0%) 0%, oklab(78.4% 0.157 -0.048) 50.42%, oklab(100% .0001 0) 93.99%)',
+                            }}
+                            animate={{ scale: [0.98, 1.06, 0.98] }}
+                            transition={{ scale: { duration: 2.9, repeat: Infinity, ease: 'easeInOut' } }}
+                        />
+                    </div>
+                    {/* Layer 3: 101×76 — blur 5px — center at (50% - 0.5px, 50% - 9.5px) */}
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ marginLeft: -0.5, marginTop: -9.5 }}>
+                        <motion.div
+                            className="rounded-[38px]"
+                            style={{
+                                width: 101,
+                                height: 76,
+                                filter: 'blur(5px)',
+                                backgroundImage: 'linear-gradient(in oklab 180deg, oklab(88.8% -0.004 -0.054 / 0%) 0%, oklab(100% 0 -.0001) 50.42%, oklab(100% 0 0) 100.85%)',
+                            }}
+                            animate={{ scale: [1.04, 0.97, 1.04] }}
+                            transition={{ scale: { duration: 2.1, repeat: Infinity, ease: 'easeInOut' } }}
+                        />
+                    </div>
+                </div>
+                {/* Text — gradient + shimmer, cycles through Generating / Curating / Crafting */}
+                <div className="flex-shrink-0 text-[16px] leading-[22px] font-sans min-w-[120px] text-center relative z-10">
+                    <AnimatePresence mode="wait">
+                        <motion.span
+                            key={LOADING_WORDS[wordIndex]}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.5, ease: 'easeInOut' }}
+                            className="gen-card-loading-text inline-block"
+                        >
+                            {LOADING_WORDS[wordIndex]}...
+                        </motion.span>
+                    </AnimatePresence>
+                </div>
+            </motion.div>
+        </div>
+    );
 };
 
 // --- STYLES FOR EFFECTS ---
@@ -135,102 +364,387 @@ const Styles = () => (
     .icon-dance {
         animation: icon-dance 1s ease-in-out infinite;
     }
+    @keyframes gen-border-spin {
+        0%   { --angle: 0deg; }
+        100% { --angle: 360deg; }
+    }
+    @keyframes gen-shimmer {
+        0%   { background-position: -200% center; }
+        100% { background-position: 200% center; }
+    }
+    /* Animated conic gradient border for generating card */
+    @property --angle {
+        syntax: '<angle>';
+        initial-value: 0deg;
+        inherits: false;
+    }
+    .gen-card-border {
+        position: absolute;
+        inset: 0;
+        padding: 2.5px;
+        background: conic-gradient(from var(--angle), #ffb3d4, #ffd6b8, #f9c9f5, #b8d4f8, #ffb3d4);
+        animation: gen-border-spin 3s linear infinite;
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+        z-index: 1;
+    }
+    /* Shimmer gradient text for "Generating..." */
+    .gen-shimmer-text {
+        background: linear-gradient(
+            90deg,
+            #ff9f63 0%,
+            #daa9f2 35%,
+            #87b3f1 65%,
+            #ff9f63 100%
+        );
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: gen-shimmer 2.2s linear infinite;
+    }
+    /* Generating card uses Paper MeshGradient as background (orb + border + text in flow above) */
+    /* Generating card label: richer gradient + shadow for contrast on mesh background */
+    .gen-card-loading-text {
+        background: linear-gradient(
+            90deg,
+            #5b8dd6 0%,
+            #9b6bb8 25%,
+            #c46b7a 50%,
+            #a55ba8 75%,
+            #5b8dd6 100%
+        );
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        text-shadow: 0 0 24px rgba(90, 100, 140, 0.3);
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.08));
+        animation: gen-shimmer 2.8s linear infinite;
+    }
+    /* AI gradient visual — two states from Figma 106-889: State1 blue→pink→orange, State2 orange→pink→yellow; radial “luminous core” vector */
+    @keyframes ai-gradient-state1 {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+    }
+    @keyframes ai-gradient-state2 {
+        0%, 100% { opacity: 0; }
+        50% { opacity: 1; }
+    }
+    .ai-gradient-loop-state1 {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background:
+            linear-gradient(180deg, #DDE2F7 0%, #F7DDE5 40%, #F7E2DD 75%, #F0D4C8 100%);
+        filter: blur(10px);
+        animation: ai-gradient-state1 2.5s ease-in-out infinite;
+        pointer-events: none;
+    }
+    .ai-gradient-loop-state2 {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background:
+            linear-gradient(180deg, #F7E2DD 0%, #F7DDE5 40%, #F7F7DD 75%, #F5F0C8 100%);
+        filter: blur(10px);
+        animation: ai-gradient-state2 2.5s ease-in-out infinite;
+        pointer-events: none;
+    }
+     /* Custom Mood Slider */
+    .mood-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 4px;
+        border-radius: 20px;
+        background: #e6e6e6;
+        cursor: pointer;
+        outline: none;
+        transition: all 0.35s ease;
+    }
+    .mood-slider:hover {
+        height: 8px;
+        background: linear-gradient(to right, #fff3e9, #ffeffe 49%, #dfe8ff);
+    }
+    /* Webkit thumb (Chrome, Safari) */
+    .mood-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #1e1e1e;
+        border: none;
+        cursor: pointer;
+        transition: all 0.35s ease;
+        box-shadow: none;
+    }
+    .mood-slider:hover::-webkit-slider-thumb {
+        width: 13px;
+        height: 13px;
+        background: radial-gradient(ellipse at 50% 100%, #ff7f2a 6%, #ff8544 11%, #ff8a5d 16%, #ff9691 27%, #fea1c5 38%, #feadf9 48%, #cba3fa 61%, #999afc 74%, #6691fd 87%, #338fff 100%);
+        border: 0.7px solid white;
+        box-shadow: 0 0 4px rgba(0,0,0,0.1);
+    }
+    /* Firefox thumb */
+    .mood-slider::-moz-range-thumb {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #1e1e1e;
+        border: none;
+        cursor: pointer;
+        transition: all 0.35s ease;
+        box-shadow: none;
+    }
+    .mood-slider:hover::-moz-range-thumb {
+        width: 13px;
+        height: 13px;
+        background: radial-gradient(ellipse at 50% 100%, #ff7f2a 6%, #ff8544 11%, #ff8a5d 16%, #ff9691 27%, #fea1c5 38%, #feadf9 48%, #cba3fa 61%, #999afc 74%, #6691fd 87%, #338fff 100%);
+        border: 0.7px solid white;
+        box-shadow: 0 0 4px rgba(0,0,0,0.1);
+    }
+    /* Webkit track */
+    .mood-slider::-webkit-slider-runnable-track {
+        height: inherit;
+        border-radius: 20px;
+        transition: all 0.35s ease;
+    }
+    /* Firefox track */
+    .mood-slider::-moz-range-track {
+        height: inherit;
+        border-radius: 20px;
+        background: inherit;
+        transition: all 0.35s ease;
+    }
   `}</style>
 );
 
-// --- DOCK BUTTON COMPONENT ---
-// Updated for lighter, modern menu: Dark text on light background
-const DockButton = React.memo(({ onClick, icon: Icon, label, active = false, className = "", id }: any) => (
-    <button
-        title={label}
-        id={id}
-        onClick={onClick}
-        className={`flex flex-col items-center justify-center 
-        w-auto h-14 min-w-[3.5rem] px-2.5 md:px-0 md:w-12 md:h-12 md:min-w-0
-        rounded-xl transition-all duration-200 group relative flex-shrink-0
-        ${active ? 'bg-black text-white shadow-xl scale-105' : 'hover:bg-black/5 text-neutral-600 hover:text-black hover:scale-105'} 
-        ${className}`}
-    >
-        <Icon size={20} className="md:w-[22px] md:h-[22px] mb-1 md:mb-0" strokeWidth={1.5} />
-        {label && (
-            <>
-                {/* Mobile: Visible Label below icon */}
-                <span className="block md:hidden text-[9px] font-bold leading-none whitespace-nowrap tracking-wide opacity-90">
-                    {label}
-                </span>
-
-                {/* Desktop: Tooltip */}
-                <span className="hidden md:block absolute -top-10 bg-white/80 backdrop-blur-md text-black/80 border border-black/5 shadow-sm text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                    {label}
-                </span>
-            </>
-        )}
-    </button>
-));
-
-// --- ANIMATED MESH GRADIENT ---
-// --- ANIMATED MESH GRADIENT ---
-const MeshGradient = ({ palette, speed = 1 }: { palette: string[], speed?: number }) => {
-    const safePalette = palette.length >= 3 ? palette : ['#F3F4F6', '#E5E7EB', '#D1D5DB'];
+// --- BOTTOM DOCK (Figma 79:300): icon-only by default, expand to icon+label on hover ---
+// Now uses SVG image icons (Phosphor) instead of Lucide, with gray (#525252) when not hovered
+const BottomDockButton = React.memo(({ onClick, iconSrc, iconSrcHover, icon: Icon, label, active = false, className = "", id, roundedClass = "rounded-[12px]" }: any) => {
+    const [hovered, setHovered] = useState(false);
     return (
-        <div className="absolute inset-0 overflow-hidden z-0 rounded-[inherit] opacity-60 saturate-110 pointer-events-none">
+        <button
+            title={label}
+            id={id}
+            onClick={onClick}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            className={`flex items-center gap-[4px] overflow-hidden border border-[#e1e1e1] transition-all duration-200 flex-shrink-0 ${roundedClass}
+                ${hovered || active ? 'bg-[#e7e7e7]' : 'bg-white'}
+                ${className}`}
+            style={{ padding: '6px 16px' }}
+        >
+            {iconSrc ? (
+                <img src={hovered && iconSrcHover ? iconSrcHover : iconSrc} alt={label} className="flex-shrink-0 w-4 h-4 transition-opacity duration-200" />
+            ) : Icon ? (
+                <Icon size={16} className="flex-shrink-0 transition-colors duration-200" strokeWidth={1.5} style={{ color: hovered ? '#000000' : '#525252' }} />
+            ) : null}
+            <motion.span
+                className="font-medium text-[14px] leading-[21px] text-black whitespace-nowrap overflow-hidden"
+                initial={false}
+                animate={{ width: hovered ? 'auto' : 0, opacity: hovered ? 1 : 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+                {label}
+            </motion.span>
+        </button>
+    );
+});
+
+// Add button with sub-menu popover (Image, Video, Text)
+const AddDockButton = ({ onAddImage, onAddVideo, onAddText }: { onAddImage: () => void; onAddVideo: () => void; onAddText: () => void }) => {
+    const [hovered, setHovered] = useState(false);
+    const timeoutRef = useRef<any>(null);
+
+    const handleEnter = () => { clearTimeout(timeoutRef.current); setHovered(true); };
+    const handleLeave = () => { timeoutRef.current = setTimeout(() => setHovered(false), 150); };
+
+    return (
+        <div className="relative flex-shrink-0" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+            <button
+                title="Add"
+                className={`flex items-center gap-[4px] overflow-hidden rounded-[12px] border border-[#e1e1e1] transition-all duration-200
+                    ${hovered ? 'bg-[#e7e7e7]' : 'bg-white'}`}
+                style={{ padding: '6px 16px' }}
+            >
+                <Plus size={13} className="flex-shrink-0 transition-colors duration-200" strokeWidth={2} style={{ color: hovered ? '#000000' : '#525252' }} />
+                <motion.span
+                    className="font-medium text-[14px] leading-[21px] text-black whitespace-nowrap overflow-hidden"
+                    initial={false}
+                    animate={{ width: hovered ? 'auto' : 0, opacity: hovered ? 1 : 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                >
+                    Add
+                </motion.span>
+            </button>
+            <AnimatePresence>
+                {hovered && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute bottom-full mb-2 left-0 flex flex-col gap-1 p-[6px] rounded-[12px] bg-white border border-[#e1e1e1] shadow-[0_8px_24px_rgba(0,0,0,0.1)] z-[10000]"
+                    >
+                        <button onClick={() => { onAddImage(); setHovered(false); }} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[#f2f2f2] transition-colors text-[14px] font-medium text-black whitespace-nowrap">
+                            <ImageIcon size={14} strokeWidth={1.5} /> Image
+                        </button>
+                        <button onClick={() => { onAddVideo(); setHovered(false); }} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[#f2f2f2] transition-colors text-[14px] font-medium text-black whitespace-nowrap">
+                            <Video size={14} strokeWidth={1.5} /> Video
+                        </button>
+                        <button onClick={() => { onAddText(); setHovered(false); }} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[#f2f2f2] transition-colors text-[14px] font-medium text-black whitespace-nowrap">
+                            <Type size={14} strokeWidth={1.5} /> Text
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};
+
+// Generate button — Paper mesh gradient shader (node 61-0) with blur + animated gradient border
+const GenerateDockButton = ({ onClick, isGenerating, id }: { onClick: () => void; isGenerating: boolean; id?: string }) => {
+    const [hovered, setHovered] = useState(false);
+    return (
+        <button
+            title={isGenerating ? "Generating..." : "Generate"}
+            id={id}
+            onClick={onClick}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            className={`relative flex items-center gap-[4px] overflow-hidden rounded-[12px] border-none transition-all duration-200 flex-shrink-0`}
+            style={{ padding: '6px 16px', background: 'transparent' }}
+        >
+            {/* Paper Mesh Gradient shader background — from Paper node 61-0, with blur(4px) */}
+            <div
+                className="absolute pointer-events-none z-0 overflow-hidden rounded-[12px]"
+                style={{
+                    top: -12, left: -12, right: -12, bottom: -12,
+                    width: 'calc(100% + 24px)', height: 'calc(100% + 24px)',
+                    filter: 'blur(4px)',
+                }}
+            >
+                <PaperMeshGradient
+                    width={180}
+                    height={64}
+                    fit="cover"
+                    colors={['#A0C4FF', '#FFE6EB', '#FFBB79', '#FFA5E3']}
+                    distortion={0.56}
+                    swirl={0.09}
+                    grainMixer={0}
+                    grainOverlay={0}
+                    speed={1}
+                    scale={2.27}
+                />
+            </div>
+            {/* Animated gradient border stroke */}
+            <div className="generate-border-animated" />
+            <div className="relative z-10 flex items-center gap-[4px]">
+                {isGenerating
+                    ? <Loader size={16} className="flex-shrink-0 animate-spin" strokeWidth={1.5} />
+                    : <img src={hovered ? FlowerTulipIcon : FlowerTulipGrayIcon} alt="Generate" className="flex-shrink-0 w-4 h-4" />
+                }
+                <motion.span
+                    className="font-medium text-[14px] leading-[21px] text-white whitespace-nowrap overflow-hidden"
+                    style={{ mixBlendMode: 'normal' }}
+                    initial={false}
+                    animate={{ width: hovered ? 'auto' : 0, opacity: hovered ? 1 : 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                >
+                    {isGenerating ? "Generating..." : "Generate"}
+                </motion.span>
+            </div>
+        </button>
+    );
+};
+
+// --- ANIMATED MESH GRADIENT ---
+const MeshGradient = ({ palette, speed = 1, opacity: opacityProp }: { palette: string[], speed?: number; opacity?: number }) => {
+    const safePalette = palette.length >= 3 ? palette : ['#F3F4F6', '#E5E7EB', '#D1D5DB'];
+    const opacity = opacityProp ?? 0.6;
+    const duration = 10 / speed;
+    return (
+        <div className="absolute inset-0 overflow-hidden z-0 rounded-[inherit] saturate-110 pointer-events-none" style={{ opacity }}>
             <motion.div
                 animate={{
-                    x: [0, 100, -50, 0],
-                    y: [0, -50, 50, 0],
-                    scale: [1, 1.2, 1],
+                    x: [0, 80, -60, 40, 0],
+                    y: [0, -40, 60, -20, 0],
+                    scale: [1, 1.25, 0.95, 1.15, 1],
                     backgroundColor: safePalette[0]
                 }}
                 transition={{
-                    x: { duration: 10 / speed, repeat: Infinity, ease: "easeInOut" },
-                    y: { duration: 10 / speed, repeat: Infinity, ease: "easeInOut" },
-                    scale: { duration: 10 / speed, repeat: Infinity, ease: "easeInOut" },
+                    x: { duration, repeat: Infinity, ease: "easeInOut" },
+                    y: { duration, repeat: Infinity, ease: "easeInOut" },
+                    scale: { duration, repeat: Infinity, ease: "easeInOut" },
                     backgroundColor: { duration: 2, ease: "easeInOut" }
                 }}
                 className="absolute top-[-20%] left-[-20%] w-[70%] h-[70%] rounded-full blur-[100px]"
             />
             <motion.div
                 animate={{
-                    x: [0, -70, 30, 0],
-                    y: [0, 60, -40, 0],
-                    scale: [1, 1.3, 1],
+                    x: [0, -60, 50, -30, 0],
+                    y: [0, 50, -30, 40, 0],
+                    scale: [1, 1.2, 1.35, 1.1, 1],
                     backgroundColor: safePalette[1]
                 }}
                 transition={{
-                    x: { duration: 12 / speed, repeat: Infinity, ease: "easeInOut" },
-                    y: { duration: 12 / speed, repeat: Infinity, ease: "easeInOut" },
-                    scale: { duration: 12 / speed, repeat: Infinity, ease: "easeInOut" },
+                    x: { duration: duration * 1.2, repeat: Infinity, ease: "easeInOut" },
+                    y: { duration: duration * 1.2, repeat: Infinity, ease: "easeInOut" },
+                    scale: { duration: duration * 1.2, repeat: Infinity, ease: "easeInOut" },
                     backgroundColor: { duration: 2, ease: "easeInOut" }
                 }}
                 className="absolute top-[20%] right-[-20%] w-[60%] h-[80%] rounded-full blur-[100px]"
             />
             <motion.div
                 animate={{
-                    x: [0, 50, -50, 0],
-                    y: [0, -30, 30, 0],
-                    scale: [1, 1.1, 1],
+                    x: [0, 40, -50, 30, 0],
+                    y: [0, -25, 40, -35, 0],
+                    scale: [1, 1.15, 0.9, 1.2, 1],
                     backgroundColor: safePalette[2]
                 }}
                 transition={{
-                    x: { duration: 9 / speed, repeat: Infinity, ease: "easeInOut" },
-                    y: { duration: 9 / speed, repeat: Infinity, ease: "easeInOut" },
-                    scale: { duration: 9 / speed, repeat: Infinity, ease: "easeInOut" },
+                    x: { duration: duration * 0.9, repeat: Infinity, ease: "easeInOut" },
+                    y: { duration: duration * 0.9, repeat: Infinity, ease: "easeInOut" },
+                    scale: { duration: duration * 0.9, repeat: Infinity, ease: "easeInOut" },
                     backgroundColor: { duration: 2, ease: "easeInOut" }
                 }}
                 className="absolute bottom-[-20%] left-[20%] w-[60%] h-[60%] rounded-full blur-[100px]"
             />
+            {safePalette[3] != null && (
+                <motion.div
+                    animate={{
+                        x: [0, -40, 50, -20, 0],
+                        y: [0, 35, -25, 30, 0],
+                        scale: [1, 1.2, 1.1, 1.25, 1],
+                        backgroundColor: safePalette[3]
+                    }}
+                    transition={{
+                        x: { duration: duration * 1.1, repeat: Infinity, ease: "easeInOut" },
+                        y: { duration: duration * 1.1, repeat: Infinity, ease: "easeInOut" },
+                        scale: { duration: duration * 1.1, repeat: Infinity, ease: "easeInOut" },
+                        backgroundColor: { duration: 2, ease: "easeInOut" }
+                    }}
+                    className="absolute top-[30%] right-[10%] w-[50%] h-[50%] rounded-full blur-[100px]"
+                />
+            )}
         </div>
     );
 };
 
 // --- LOADING SKELETON ---
 const LoadingCards = () => (
-    <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-md flex flex-col items-center justify-center rounded-[inherit]">
+    <div className="absolute inset-0 z-50 bg-white/90 flex flex-col items-center justify-center rounded-[inherit]">
         <div className="relative w-24 h-32 mb-8">
             {[0, 1, 2].map((i) => (
                 <motion.div
                     key={i}
-                    className="absolute inset-0 bg-white border border-gray-200 shadow-xl rounded-xl"
+                    className="absolute inset-0 bg-white border border-[#ddd] rounded-[8px]"
+                    style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}
                     initial={{ rotate: i * 5, y: 0, opacity: 0 }}
                     animate={{
                         rotate: [i * 5, i * 15, i * 5],
@@ -252,7 +766,7 @@ const LoadingCards = () => (
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, repeat: Infinity, repeatType: "reverse" }}
-            className="text-sm font-semibold text-gray-500 tracking-widest uppercase"
+            className="text-[14px] font-normal text-[#333]"
         >
             Adding images...
         </motion.p>
@@ -325,7 +839,7 @@ const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
 
 // --- BOARD ITEM COMPONENT ---
 // --- FLIPPABLE IMAGE COMPONENT ---
-const FlippableImage = ({ item, style, className, showBorders, imageRadius, borderThickness = 10, children, isShaderActive, updateAspectRatio }: any) => {
+const FlippableImage = ({ item, style, className, showBorders, imageRadius, borderThickness = 10, borderStyle = 'glass', borderColor = '#ffffff', children, isShaderActive, updateAspectRatio }: any) => {
 
     const handleMediaLoad = (e: any) => {
         if (!updateAspectRatio) return;
@@ -371,18 +885,21 @@ const FlippableImage = ({ item, style, className, showBorders, imageRadius, bord
     }, [item.type, item.content]);
 
     // Helper to render the media content with common styling
+    const isGlass = borderStyle === 'glass';
+    const strokeColor = isGlass ? 'rgba(255,255,255,0.2)' : borderColor;
+    const outlineColor = isGlass ? 'rgba(209, 213, 219, 0.6)' : borderColor;
     const renderMediaContent = () => (
-        <div className={`w-full h-full overflow-hidden ${showBorders && !isShaderActive ? 'bg-white/40 backdrop-blur-md' : ''}`}
+        <div className={`w-full h-full overflow-hidden ${showBorders && !isShaderActive ? (isGlass ? 'bg-white/40 backdrop-blur-md' : '') : ''}`}
             style={{
                 padding: '0px',
                 borderRadius: `${imageRadius}px`,
                 boxShadow: showBorders
                     ? (isShaderActive
                         ? '0 30px 60px -12px rgba(0,0,0,0.6)' // Deeper shadow for shader mode
-                        : `0 0 0 ${borderThickness}px rgba(255,255,255,0.2), 0 25px 50px -12px rgba(0,0,0,0.5)`
+                        : `0 0 0 ${borderThickness}px ${strokeColor}, 0 25px 50px -12px rgba(0,0,0,0.5)`
                     )
                     : '0 25px 50px -12px rgba(0,0,0,0.5)',
-                outline: (showBorders && !isShaderActive) ? '1px solid rgba(209, 213, 219, 0.6)' : 'none',
+                outline: (showBorders && !isShaderActive) ? `1px solid ${outlineColor}` : 'none',
                 outlineOffset: (showBorders && !isShaderActive) ? `${borderThickness}px` : '0px'
             }}>
             {item.type === 'video' ? (
@@ -456,66 +973,7 @@ const FlippableImage = ({ item, style, className, showBorders, imageRadius, bord
     );
 };
 
-// --- INSPIRATION QUOTE COMPONENT ---
-const INSPIRATION_QUOTES = [
-    "A hush of colors drifts like fog over a quiet sea, inviting every sketch to breathe.",
-    "The moodboard is a map of soft weather—luminous storms, tender shadows, and roads made of hue.",
-    "Texture becomes memory: velvet echoes, grain murmurs, paper remembers our touch.",
-    "A small constellation of references—each image a star, each note a faint gravity.",
-    "We collect the air itself: a breeze of ideas, a draft that turns into weather."
-];
-
-const InspirationQuote = () => {
-    const [index, setIndex] = useState(0);
-
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setIndex((prev) => (prev + 1) % INSPIRATION_QUOTES.length);
-        }, 60000); // 1 minute
-        return () => clearInterval(timer);
-    }, []);
-
-    const handleClick = () => {
-        setIndex((prev) => (prev + 1) % INSPIRATION_QUOTES.length);
-    };
-
-    const words = INSPIRATION_QUOTES[index].split(" ");
-
-    return (
-        <div
-            className="max-w-md cursor-pointer pointer-events-auto"
-            onClick={handleClick}
-        >
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key={index}
-                    initial="hidden"
-                    animate="visible"
-                    exit="hidden"
-                    variants={{
-                        visible: { transition: { staggerChildren: 0.12 } },
-                        hidden: {}
-                    }}
-                    className="flex flex-wrap gap-x-1.5"
-                >
-                    {words.map((word, i) => (
-                        <motion.span
-                            key={i}
-                            variants={{
-                                hidden: { opacity: 0, filter: 'blur(10px)', x: -10 },
-                                visible: { opacity: 1, filter: 'blur(0px)', x: 0, transition: { duration: 2.5, ease: "easeInOut" } }
-                            }}
-                            className="text-sm font-medium text-gray-400 tracking-wide leading-relaxed"
-                        >
-                            {word}
-                        </motion.span>
-                    ))}
-                </motion.div>
-            </AnimatePresence>
-        </div>
-    );
-};
-
+// --- INTERACTIVE QUOTE COMPONENT (Used in empty state) ---
 const InteractiveQuote = () => {
     const text = "Design the feeling first; let evidence arrange the form.";
     const words = text.split(" ");
@@ -665,6 +1123,8 @@ const BoardItem = React.forwardRef(({
 
     showBorders,
     borderThickness, // Added prop
+    borderStyle,
+    borderColor,
     quoteSize,
     updateItemContent,
     bringToFront,
@@ -865,42 +1325,7 @@ const BoardItem = React.forwardRef(({
                     )}
 
                     {item.isLoading ? (
-                        <motion.div
-                            className="relative w-full h-full"
-                            animate={{
-                                y: [0, -15, 0],
-                                rotate: [0, 1, -1, 0],
-                                scale: [1, 1.02, 1],
-                            }}
-                            transition={{
-                                duration: 5,
-                                repeat: Infinity,
-                                ease: "easeInOut"
-                            }}
-                        >
-                            {/* Outer Glow Effect */}
-                            <div className="absolute -inset-8 opacity-60 blur-2xl z-0">
-                                <MeshGradient palette={['#FF9A9E', '#FECFEF', '#A18CD1']} speed={0.3} />
-                            </div>
-
-                            {/* Main Card */}
-                            <div
-                                className="w-full h-full bg-white/30 flex flex-col items-center justify-center relative overflow-hidden border-[3px] border-white/20 shadow-xl z-10 backdrop-blur-md"
-                                style={{ borderRadius: `${imageRadius}px` }}
-                            >
-                                <MeshGradient palette={['#FF9A9E', '#FECFEF', '#A18CD1']} speed={0.3} />
-                                <div className="absolute inset-0 bg-white/10 backdrop-blur-[20px] z-0" />
-
-                                <Loader className="w-8 h-8 text-white animate-spin mb-3 relative z-10 drop-shadow-md" />
-                                <motion.span
-                                    animate={{ opacity: [0.6, 1, 0.6] }}
-                                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                                    className="text-xs text-white font-bold tracking-widest uppercase relative z-10 drop-shadow-sm"
-                                >
-                                    Curating...
-                                </motion.span>
-                            </div>
-                        </motion.div>
+                        <GeneratingCard borderRadius={imageRadius} />
                     ) : (item.type === 'image' || item.type === 'video') ? (
                         <FlippableImage
                             item={item}
@@ -918,6 +1343,8 @@ const BoardItem = React.forwardRef(({
                             showBorders={showBorders}
                             imageRadius={imageRadius}
                             borderThickness={borderThickness}
+                            borderStyle={borderStyle}
+                            borderColor={borderColor}
                             boardTitle={boardTitle}
                             boardAuthor={boardAuthor}
                             updateAspectRatio={updateAspectRatio}
@@ -960,6 +1387,8 @@ const BoardItem = React.forwardRef(({
                             height={computedHeight}
                             showBorders={showBorders}
                             borderThickness={borderThickness}
+                            borderStyle={borderStyle}
+                            borderColor={borderColor}
                             imageRadius={imageRadius}
                         >
                             {!isExporting && (
@@ -1029,7 +1458,7 @@ const DEFAULT_ITEMS: BoardItem[] = [
     {
         id: 'example-1',
         type: 'image',
-        content: new URL('./examplesassets/42ce9208-5f24-48d9-9d3c-88a05cd62305.jpeg', import.meta.url).href,
+        content: new URL('./examplesassets/7b8e8ebf-c53a-4824-b4ec-ef55745029a1.jpeg', import.meta.url).href,
         x: 15, y: 15, rotation: -5, zIndex: 1, width: 300, aspectRatio: 1.5, manualWidth: 300,
         author: 'Example'
     },
@@ -1056,15 +1485,15 @@ const DEFAULT_ITEMS: BoardItem[] = [
     },
     {
         id: 'example-5',
-        type: 'pdf',
-        content: new URL('./examplesassets/2023-lululemon-impact-report.pdf', import.meta.url).href,
+        type: 'image',
+        content: new URL('./examplesassets/feb2e180-d395-40f7-9b85-07d4d470e942.jpeg', import.meta.url).href,
         x: 5, y: 65, rotation: 5, zIndex: 5, width: 250, aspectRatio: 0.77, manualWidth: 250,
         author: 'Example'
     },
     {
         id: 'example-6',
         type: 'video',
-        content: new URL('./examplesassets/7ebfbd28-a2d3-48a2-8329-2147b64550cd.mp4', import.meta.url).href,
+        content: new URL('./examplesassets/454fd3e7.mp4', import.meta.url).href,
         x: 45, y: 75, rotation: -3, zIndex: 6, width: 350, aspectRatio: 0.56, manualWidth: 350,
         author: 'Example'
     },
@@ -1099,8 +1528,6 @@ const OrganicMoodboard = () => {
     );
     const [activeIndex, setActiveIndex] = useState(0);
     const [flippedItems, setFlippedItems] = useState<Set<string>>(new Set()); // Track flipped items
-    const [isDockExpanded, setIsDockExpanded] = useState(true);
-    const [isTopMenuExpanded, setIsTopMenuExpanded] = useState(false); // Mobile collapse state for top menu
     const [hasSeenTour, setHasSeenTour] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false); // Track drag over state
 
@@ -1149,6 +1576,8 @@ const OrganicMoodboard = () => {
     const [bgMode, setBgMode] = useState<'solid' | 'gradient' | 'shader'>('shader');
 
     const [showBorders, setShowBorders] = useState(true);
+    const [borderStyle, setBorderStyle] = useState<'glass' | 'filled'>('glass');
+    const [borderColor, setBorderColor] = useState('#ffffff');
     const [borderThickness, setBorderThickness] = useState(10); // New state for border thickness
     const [showGrid, setShowGrid] = useState(true); // New state for grid overlay (Default ON)
     const [gridType, setGridType] = useState<'square' | 'dot'>('dot'); // New state for grid type (Default Dot)
@@ -1157,12 +1586,12 @@ const OrganicMoodboard = () => {
 
     const [currentFontIndex, setCurrentFontIndex] = useState(0);
     const [showSettings, setShowSettings] = useState(false);
+    const [settingsTab, setSettingsTab] = useState<'dashboard' | 'item'>('dashboard');
     const [isExporting, setIsExporting] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false); // New state for overlay
     const [progress, setProgress] = useState(0); // New state for progress
     const [isLoading, setIsLoading] = useState(false);
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-    const [isGeneratingDescription, setIsGeneratingDescription] = useState(false); // New state
     const [resizingId, setResizingId] = useState<string | null>(null);
 
 
@@ -1183,7 +1612,6 @@ const OrganicMoodboard = () => {
     const [aboutText, setAboutText] = useState("");
     const [tags, setTags] = useState(['', '', '']);
     const [palette, setPalette] = useState(['#F3F4F6', '#F3F4F6', '#F3F4F6', '#F3F4F6', '#F3F4F6', '#F3F4F6']);
-    const [author, setAuthor] = useState("");
 
     const exportWrapperRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -1344,6 +1772,70 @@ const OrganicMoodboard = () => {
                     finish();
                 }
                 img.onerror = () => finish();
+            }
+        });
+    };
+
+    // Capture a representative frame from a video as a data URL for AI reference
+    const captureVideoSnapshot = (videoUrl: string): Promise<string | null> => {
+        return new Promise((resolve) => {
+            try {
+                const video = document.createElement('video');
+                video.src = videoUrl;
+                video.muted = true;
+                video.playsInline = true;
+                video.crossOrigin = 'anonymous';
+
+                const onError = () => {
+                    cleanup();
+                    resolve(null);
+                };
+
+                const cleanup = () => {
+                    video.removeEventListener('error', onError);
+                    video.removeEventListener('loadeddata', onLoadedData);
+                    video.removeEventListener('seeked', onSeeked);
+                };
+
+                const onSeeked = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        const targetWidth = 512;
+                        const aspect = video.videoWidth > 0 ? video.videoHeight / video.videoWidth : 9 / 16;
+                        canvas.width = targetWidth;
+                        canvas.height = Math.round(targetWidth * aspect);
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            cleanup();
+                            resolve(null);
+                            return;
+                        }
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                        cleanup();
+                        resolve(dataUrl);
+                    } catch {
+                        cleanup();
+                        resolve(null);
+                    }
+                };
+
+                const onLoadedData = () => {
+                    // Seek slightly into the video to avoid black frames
+                    video.currentTime = Math.min(1.0, (video.duration || 2) / 4);
+                };
+
+                video.addEventListener('error', onError);
+                video.addEventListener('loadeddata', onLoadedData);
+                video.addEventListener('seeked', onSeeked);
+
+                // Fallback timeout
+                setTimeout(() => {
+                    cleanup();
+                    resolve(null);
+                }, 5000);
+            } catch {
+                resolve(null);
             }
         });
     };
@@ -1708,12 +2200,25 @@ const OrganicMoodboard = () => {
     };
 
     const handleAiGenerate = async () => {
-        const currentImageUrls = items
-            .filter(item => item.type === 'image')
-            .map(item => item.content);
+        const imageItems = items.filter(item => item.type === 'image');
+        const videoItems = items.filter(item => item.type === 'video');
+
+        if (imageItems.length === 0 && videoItems.length === 0) {
+            alert("Please add at least one image or video to the board first!");
+            return;
+        }
+
+        const currentImageUrls = [
+            ...imageItems.map(item => item.content),
+            ...(
+                await Promise.all(
+                    videoItems.map(v => captureVideoSnapshot(v.content))
+                )
+            ).filter((u): u is string => Boolean(u))
+        ];
 
         if (currentImageUrls.length === 0) {
-            alert("Please add at least one image to the board first!");
+            alert("Could not read any visual content from the board.");
             return;
         }
 
@@ -1781,27 +2286,6 @@ const OrganicMoodboard = () => {
         setIsGeneratingAI(false);
     };
 
-    const handleGenerateDescription = async () => {
-        const currentImageUrls = items
-            .filter(item => item.type === 'image')
-            .map(item => item.content);
-
-        if (currentImageUrls.length === 0) {
-            alert("Add some images first!");
-            return;
-        }
-
-        setIsGeneratingDescription(true);
-        const description = await generateBoardDescription(currentImageUrls);
-
-        if (description) {
-            setAboutText(description);
-        } else {
-            alert("Could not generate description.");
-        }
-        setIsGeneratingDescription(false);
-    };
-
     const addQuote = () => {
 
         const gridData = getSmartPos(items.length, layoutMode);
@@ -1834,6 +2318,19 @@ const OrganicMoodboard = () => {
         const updatedItems = [...items, newItem];
         setItems(updatedItems);
         if (layoutMode === 'grid') reLayoutGrid(updatedItems);
+    };
+
+    const handleShuffle = () => {
+        if (items.length <= 1) return;
+        const shuffled = [...items].sort(() => Math.random() - 0.5);
+        if (layoutMode === 'grid') {
+            reLayoutGrid(shuffled);
+        } else {
+            setItems(shuffled.map((item, index) => {
+                const pos = getOrganicPos(index);
+                return { ...item, ...pos, width: item.manualWidth || 220, height: undefined };
+            }));
+        }
     };
 
     const reLayoutGrid = (currentItems: BoardItem[]) => {
@@ -1888,8 +2385,6 @@ const OrganicMoodboard = () => {
                 // Text items usually benefit from their own height, but in grid we width-constrain them.
                 // We'll let them keep their current height if it seems reasonable, or recalculate.
                 // Ideally text height adjusts to content. 
-                // For now, let's trust the item's stored height or a default approximation.
-                // But if width changes, height should change. Text reflows.
                 // This is hard to calculate exactly without DOM.
                 // We'll approximate or assume the user has resized it if it was manual.
                 // If it's a new item, it might be tricky.
@@ -2074,8 +2569,8 @@ const OrganicMoodboard = () => {
 
     return (
         <div
-            className="flex items-center justify-center w-full h-screen bg-[#E5E5EA] overflow-hidden font-sans text-[#1D1D1F] relative"
-            style={{ fontFamily: FONTS[currentFontIndex].family }}
+            className="flex items-center justify-center w-full h-screen overflow-hidden font-sans text-[#1D1D1F] relative"
+            style={{ fontFamily: FONTS[currentFontIndex].family, backgroundColor: '#f5f5f5' }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -2171,7 +2666,7 @@ const OrganicMoodboard = () => {
                         <button
                             id="sidebar-toggle"
                             onClick={() => setIsSidebarOpen(true)}
-                            className="absolute top-6 left-6 z-50 p-3 bg-white/50 hover:bg-white/80 backdrop-blur-md rounded-xl transition-all shadow-sm text-gray-600 hover:scale-105"
+                            className="absolute top-6 left-6 z-50 p-3 bg-white hover:bg-[#f2f2f2] border border-[#ddd] rounded-[8px] transition-all shadow-[0_4px_12px_rgba(0,0,0,0.06)] text-[#333]"
                         >
                             <ChevronRight size={20} />
                         </button>
@@ -2180,98 +2675,166 @@ const OrganicMoodboard = () => {
                     <AnimatePresence initial={false}>
                         {isSidebarOpen && (
                             <motion.div
-                                initial={{ width: 0, opacity: 0 }}
-                                animate={{ width: windowWidth < 768 ? "100%" : "20%", opacity: 1 }}
-                                exit={{ width: 0, opacity: 0 }}
-                                transition={{ duration: 0.4, ease: "easeInOut" }}
-                                className="h-full flex flex-col p-8 border-r border-black/5 relative z-20 bg-[#f5f5f5]"
+                                initial={{ x: -290, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                exit={{ x: -290, opacity: 0 }}
+                                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                                className="absolute top-3 left-3 z-[100] overflow-hidden"
+                                style={{
+                                    width: windowWidth < 768 ? 'calc(100% - 24px)' : 290,
+                                    maxHeight: 837,
+                                    height: 'calc(100% - 24px)',
+                                    borderRadius: 20,
+                                    boxShadow: '0 12px 48px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)',
+                                }}
                             >
-                                <div className="mb-8 mt-0 flex items-center justify-between">
-                                    <img src={MoodLogo} alt="Mood Logo" className="w-32 h-32" />
-                                    {!isExporting && (
-                                        <button
-                                            onClick={() => setIsSidebarOpen(false)}
-                                            className="p-2 bg-black/5 hover:bg-black/10 rounded-xl transition-all text-gray-500 hover:text-black"
-                                        >
-                                            <ChevronLeft size={20} />
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="mb-8">
-                                    {isExporting ? (
-                                        <div className="text-xl md:text-3xl font-normal tracking-tight text-gray-900 w-full mb-2 leading-tight">{title || "Visual Exploration 01"}</div>
-                                    ) : (
-                                        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Visual Exploration 01" className="text-xl md:text-3xl font-normal tracking-tight text-gray-900 bg-transparent border-none outline-none focus:ring-0 placeholder:text-gray-400/50 w-full mb-2 leading-tight" />
-                                    )}
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                                        <span className="font-medium uppercase tracking-wide opacity-50">By</span>
-                                        {isExporting ? (
-                                            <div className="font-semibold text-gray-900">{author || "Studio Name"}</div>
-                                        ) : (
-                                            <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Studio Name" className="font-semibold text-gray-900 bg-transparent border-none outline-none focus:ring-0 placeholder:text-gray-400/50" />
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="mb-8 flex-1">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="text-[11px] font-medium text-gray-500 tracking-wide opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Description</h3>
-                                        {!isExporting && (
-                                            <button
-                                                id="tour-ai-desc" // Tour Target
-                                                onClick={handleGenerateDescription}
-                                                disabled={isGeneratingDescription}
-                                                className={`p-1.5 rounded-full transition-all ${isGeneratingDescription ? 'bg-purple-100 text-purple-500' : 'hover:bg-purple-50 text-gray-400 hover:text-purple-500'}`}
-                                                title="Auto-generate description"
-                                            >
-                                                <MagicIcon size={12} className={isGeneratingDescription ? "animate-spin" : ""} />
-                                            </button>
-                                        )}
-                                    </div>
-                                    {isExporting ? (
-                                        <div className="w-full h-full text-lg font-normal text-gray-800 leading-relaxed whitespace-pre-wrap">{aboutText || "A curated collection exploring nature and technology."}</div>
-                                    ) : isGeneratingDescription ? (
-                                        <div className="w-full h-full flex flex-col justify-center space-y-2 animate-pulse">
-                                            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                                            <div className="h-4 bg-gray-200 rounded w-full"></div>
-                                            <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                                <div
+                                    className="h-full flex flex-col bg-white overflow-y-auto custom-scrollbar gap-[28px]"
+                                    style={{
+                                        borderRadius: 20
+                                    }}
+                                >
+                                    {/* --- HEADER: Logo + Title + Description --- */}
+                                    <div className="flex flex-col gap-[36px] items-start px-[28px] pt-8 pb-8 border-b border-[#f2f2f2] shrink-0 w-full">
+                                        <div className="flex items-center justify-between w-full">
+                                            <img
+                                                src={MoodLogo}
+                                                alt="Mood Logo"
+                                                className="w-[51px] h-[51px]"
+                                            />
+                                            {!isExporting && (
+                                                <button
+                                                    onClick={() => setIsSidebarOpen(false)}
+                                                    className="p-2 hover:bg-[#f8f8f8] rounded-[8px] transition-all text-[#333]"
+                                                >
+                                                    <ChevronLeft size={18} />
+                                                </button>
+                                            )}
                                         </div>
-                                    ) : (
-                                        <textarea value={aboutText} onChange={(e) => setAboutText(e.target.value)} placeholder="A curated collection exploring nature and technology." className="w-full h-full text-lg font-normal text-gray-800 leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-0 placeholder:text-gray-400/50" />
-                                    )}
-                                </div>
-                                <div className="mb-8">
-                                    <h3 className="text-[11px] font-medium text-gray-500 tracking-wide mb-3 opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Keywords</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {tags.map((tag, i) => (
-                                            isExporting ? (
-                                                <div key={i} className="px-3 py-1.5 bg-white/50 text-gray-800 rounded-lg text-xs font-medium border border-black/5 w-full text-left">{tag || "Tag"}</div>
+
+                                        <div className="flex flex-col gap-[18px] w-full">
+                                            {isExporting ? (
+                                                <div className="text-[20px] font-medium leading-[22px] text-[#1e1e1e] w-full">
+                                                    {title || "Visual Exploration #1"}
+                                                </div>
                                             ) : (
-                                                <input key={i} value={tag} onChange={(e) => { const newTags = [...tags]; newTags[i] = e.target.value; setTags(newTags); }} placeholder="Tag" className="px-3 py-2.5 bg-white/40 text-gray-800 rounded-lg text-xs font-medium border border-black/5 shadow-sm outline-none w-full text-left backdrop-blur-md focus:bg-white placeholder:text-gray-400/50" />
-                                            )
-                                        ))}
+                                                <input
+                                                    value={title}
+                                                    onChange={(e) => setTitle(e.target.value)}
+                                                    placeholder="Visual Exploration #1"
+                                                    className="text-[20px] font-medium leading-[22px] text-[#1e1e1e] bg-transparent border-none outline-none focus:ring-0 placeholder:text-[#bcbcbc] w-full"
+                                                />
+                                            )}
+                                            {isExporting ? (
+                                                <div className="text-[14px] font-normal leading-[22px] text-[#bcbcbc] w-full pb-2">
+                                                    {aboutText || "A curated description about this unique space you're curating and bring to life...."}
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-start w-full">
+                                                    <textarea
+                                                        value={aboutText}
+                                                        onChange={(e) => setAboutText(e.target.value)}
+                                                        placeholder="A curated description about this unique space you're curating and bring to life...."
+                                                        className="flex-1 text-[14px] font-normal leading-[22px] text-[#bcbcbc] bg-transparent border-none outline-none resize-none focus:ring-0 placeholder:text-[#bcbcbc] min-h-[88px] w-full p-0"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="mt-auto">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="text-[11px] font-medium text-gray-500 tracking-wide opacity-60" style={{ fontFamily: "'Geist Variable', sans-serif" }}>Palette</h3>
-                                        {items.some(i => i.type === 'image' || i.type === 'video') && (
-                                            <button type="button" onClick={() => updatePaletteFromAllImages([], false)} className="text-[10px] text-gray-500 hover:text-[#18181b] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#18181b]/10 transition-colors" title="Extract colors from board images">From board</button>
-                                        )}
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {palette.map((color, i) => (
-                                            <div
-                                                key={i}
-                                                className="aspect-square rounded-xl border border-black/5 relative overflow-hidden shadow-sm group cursor-pointer"
-                                                onClick={() => navigator.clipboard.writeText(color)}
-                                                title="Copy Hex"
-                                            >
-                                                <div className="w-full h-full" style={{ backgroundColor: color }} />
-                                                <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Copy size={12} className="text-white" />
+
+                                    {/* --- CONTENT: Essence + Palette + Download --- */}
+                                    <div className="flex flex-col justify-between px-[28px] pb-8 flex-1 min-h-0">
+                                        <div className="flex flex-col gap-[40px] mb-[40px]">
+                                            {/* --- Essence (Keywords) --- */}
+                                            <div className="flex flex-col gap-[14px]">
+                                                <h3 className="text-[16px] font-medium leading-[22px] text-[#1e1e1e]">
+                                                    Essence
+                                                </h3>
+                                                <div className="flex flex-col gap-[10px] w-full">
+                                                    {tags.map((tag, i) => (
+                                                        isExporting ? (
+                                                            <div key={i} className="w-full px-[14px] py-2 bg-[#f8f8f8] rounded-[8px] text-[14px] font-normal leading-[22px] text-[#bcbcbc]">
+                                                                {tag || "Keyword"}
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                key={i}
+                                                                value={tag}
+                                                                onChange={(e) => { const newTags = [...tags]; newTags[i] = e.target.value; setTags(newTags); }}
+                                                                placeholder={`Keyword ${i + 1}`}
+                                                                className="w-full px-[14px] py-1.5 bg-[#f8f8f8] rounded-[8px] text-[14px] font-normal leading-[22px] text-[#bcbcbc] border-none outline-none focus:bg-[#f2f2f2] placeholder:text-[#bcbcbc] transition-colors"
+                                                            />
+                                                        )
+                                                    ))}
                                                 </div>
                                             </div>
-                                        ))}
+
+                                            {/* --- Color Palette --- */}
+                                            <div className="flex flex-col gap-[14px]">
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-[16px] font-medium leading-[22px] text-[#1e1e1e]">
+                                                        Color Palette
+                                                    </h3>
+                                                    {items.some(i => i.type === 'image' || i.type === 'video') && !isExporting && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => updatePaletteFromAllImages([], false)}
+                                                            className="px-3 py-1 rounded-[8px] text-[14px] bg-[#f8f8f8] text-[#6f6f6f] hover:bg-[#f2f2f2] transition-colors"
+                                                            title="Extract colors from board images"
+                                                        >
+                                                            From board
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col gap-[10px] w-full">
+                                                    <div className="flex items-center justify-between w-full h-[36px]">
+                                                        {[0, 1, 2, 3].map((i) => (
+                                                            <div
+                                                                key={i}
+                                                                className="w-[36px] h-[36px] rounded-[8px] relative overflow-hidden group cursor-pointer flex-shrink-0"
+                                                                style={{ backgroundColor: (palette[i] as string) || '#f8f8f8' }}
+                                                                onClick={() => (palette[i] && navigator.clipboard.writeText(palette[i] as string))}
+                                                                title={(palette[i] as string) || ''}
+                                                            >
+                                                                {!isExporting && (
+                                                                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <Copy size={12} className="text-white" />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex items-center justify-between w-full h-[36px]">
+                                                        {[4, 5, 6, 7].map((i) => (
+                                                            <div
+                                                                key={i}
+                                                                className="w-[36px] h-[36px] rounded-[8px] relative overflow-hidden group cursor-pointer flex-shrink-0"
+                                                                style={{ backgroundColor: (palette[i] as string) || '#f8f8f8' }}
+                                                                onClick={() => (palette[i] && navigator.clipboard.writeText(palette[i] as string))}
+                                                                title={(palette[i] as string) || ''}
+                                                            >
+                                                                {!isExporting && (
+                                                                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <Copy size={12} className="text-white" />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* --- Download Button --- */}
+                                        <div className="pb-0 shrink-0">
+                                            <button
+                                                onClick={handleSave}
+                                                className="w-full flex items-center justify-center gap-[10px] px-4 py-[10px] bg-[#ddd] border border-[#d5d5d5] rounded-[8px] text-[14px] font-normal leading-[21px] text-black hover:bg-[#d5d5d5] transition-colors"
+                                            >
+                                                <Download size={18} />
+                                                <span>Download board</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </motion.div>
@@ -2323,7 +2886,7 @@ const OrganicMoodboard = () => {
                                     transition={{ duration: 1.5, ease: "easeOut", delay: 0.5 }}
                                     className="absolute inset-0 flex flex-col items-center justify-center px-6 pointer-events-none"
                                 >
-                                    <div className="p-12 rounded-3xl backdrop-blur-xl bg-white/30 shadow-[0_0_40px_-10px_rgba(255,255,255,0.5)] border border-white/20 pointer-events-auto">
+                                    <div className="p-[26px] rounded-[20px] bg-white border border-[#ddd] shadow-[0_8px_32px_rgba(0,0,0,0.08)] pointer-events-auto">
                                         <InteractiveQuote />
                                     </div>
                                 </motion.div>
@@ -2425,11 +2988,7 @@ const OrganicMoodboard = () => {
                                                     {/* Content */}
                                                     <div className="relative w-full h-full" style={{ transformStyle: 'preserve-3d' }}>
                                                         {item.isLoading ? (
-                                                            <div className="w-full h-full bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center relative overflow-hidden rounded-xl border border-white/50 shadow-xl">
-                                                                <div className="magical-glow opacity-50"></div>
-                                                                <Loader className="w-8 h-8 text-purple-600 animate-spin mb-3 relative z-10" />
-                                                                <span className="text-xs text-purple-800 font-medium relative z-10">Dreaming...</span>
-                                                            </div>
+                                                            <GeneratingCard borderRadius={imageRadius} />
                                                         ) : (item.type === 'image' || item.type === 'video') ? (
                                                             <motion.div
                                                                 className={`transition-all w-full h-full`}
@@ -2463,6 +3022,9 @@ const OrganicMoodboard = () => {
                                                                     onToggleFlip={toggleFlip}
                                                                     showBorders={showBorders}
                                                                     imageRadius={imageRadius}
+                                                                    borderThickness={borderThickness}
+                                                                    borderStyle={borderStyle}
+                                                                    borderColor={borderColor}
                                                                     shaderColors={activeShaderColors}
                                                                     isShaderActive={isShaderMode}
                                                                 />
@@ -2475,6 +3037,8 @@ const OrganicMoodboard = () => {
                                                                 height={600 * (item.aspectRatio || 1.33)} // Height derived from AR
                                                                 showBorders={showBorders}
                                                                 borderThickness={borderThickness}
+                                                                borderStyle={borderStyle}
+                                                                borderColor={borderColor}
                                                                 imageRadius={imageRadius}
                                                                 onAspectRatioChange={(newRatio: number) => {
                                                                     // Only update if significantly different
@@ -2540,6 +3104,8 @@ const OrganicMoodboard = () => {
                                             imageRadius={imageRadius}
                                             showBorders={showBorders}
                                             borderThickness={borderThickness}
+                                            borderStyle={borderStyle}
+                                            borderColor={borderColor}
                                             quoteSize={quoteSize}
                                             updateItemContent={updateItemContent}
                                             bringToFront={bringToFront}
@@ -2559,302 +3125,310 @@ const OrganicMoodboard = () => {
 
                         </div>
 
-                        {/* --- INSPIRATION QUOTE --- */}
-                        {!isExporting && layoutMode !== 'animate' && (
-                            <div className="absolute bottom-8 left-8 z-[100]">
-                                <InspirationQuote />
-                            </div>
-                        )}
+                        {/* --- INSPIRATION QUOTE REMOVED --- */}
                     </div>
 
                     {/* --- DOCK --- */}
 
 
-                    {/* --- TOP RIGHT MENU --- */}
+                    {/* --- TOP RIGHT MENU / EXIT SLIDESHOW --- */}
                     {!isExporting && (
                         <div className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2 pointer-events-none">
-                            {/* Header Buttons */}
-                            <div className="flex flex-col items-end gap-2 pointer-events-auto">
-                                {/* Mobile Toggle for Top Menu */}
-                                <div className="md:hidden">
-                                    <DockButton
-                                        onClick={() => setIsTopMenuExpanded(!isTopMenuExpanded)}
-                                        icon={isTopMenuExpanded ? X : Menu}
-                                        label={isTopMenuExpanded ? "Close" : "Menu"}
-                                        className="bg-white/60 backdrop-blur-xl shadow-lg border border-white/20"
-                                    />
-                                </div>
-
-                                {/* Menu Items: Always show on desktop, toggle on mobile */}
-                                <AnimatePresence>
-                                    {(isTopMenuExpanded || window.innerWidth >= 768) && (
-                                        <motion.div
-                                            initial={{ opacity: 0, scale: 0.9, y: -10, originY: 0 }}
-                                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                                            exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                                            className="flex flex-col md:flex-row items-stretch md:items-center gap-2 p-1.5 rounded-2xl bg-white/60 backdrop-blur-2xl shadow-xl border-[2px] border-white/20 mt-2 md:mt-0"
-                                        >
-                                            <DockButton
-                                                onClick={handleSave}
-                                                icon={Download}
-                                                label={window.innerWidth < 768 ? "Save" : "Save"}
-                                            />
-                                            <div className="w-full h-px md:w-px md:h-8 bg-black/10 mx-1" />
-                                            <DockButton
-                                                id="tour-style"
-                                                onClick={() => setShowSettings(!showSettings)}
-                                                icon={SlidersHorizontal}
-                                                label="Style"
-                                                active={showSettings}
-                                            />
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
-
-                            {/* Settings Panel - Moved to Top Right */}
+                            {/* Exit Slideshow Button */}
                             <AnimatePresence>
-                                {showSettings && (
+                                {layoutMode === 'animate' && (
                                     <motion.div
-                                        initial={{ opacity: 0, scale: 0.9, y: -20, x: 20, filter: "blur(10px)" }}
-                                        animate={{ opacity: 1, scale: 1, y: 0, x: 0, filter: "blur(0px)" }}
-                                        exit={{ opacity: 0, scale: 0.9, y: -20, x: 20, filter: "blur(10px)" }}
-                                        transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                                        className="flex flex-col gap-4 p-5 rounded-3xl bg-white/60 backdrop-blur-2xl border-[3px] border-white/20 shadow-2xl w-80 pointer-events-auto origin-top-right"
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.95 }}
+                                        className="pointer-events-auto"
                                     >
-                                        <div className="space-y-5">
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Dashboard Radius</span><span className="text-gray-900 font-mono text-xs">{dashboardRadius}px</span></div>
-                                                <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Item Radius</span><span className="text-gray-900 font-mono text-xs">{imageRadius}px</span></div>
-                                                <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Border Thickness</span><span className="text-gray-900 font-mono text-xs">{borderThickness}px</span></div>
-                                                <input type="range" min="0" max="40" value={borderThickness} onChange={(e) => setBorderThickness(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Show Grid</span>
-                                                <div className="flex gap-2 items-center">
-                                                    {showGrid && (
-                                                        <button
-                                                            onClick={() => setGridType(prev => prev === 'square' ? 'dot' : 'square')}
-                                                            className="text-[10px] font-bold uppercase tracking-wide text-gray-400 hover:text-[#18181b] transition-colors mr-2"
-                                                        >
-                                                            {gridType === 'square' ? 'Square' : 'Dot'}
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        onClick={() => setShowGrid(!showGrid)}
-                                                        className={`w-10 h-5 rounded-full relative transition-colors ${showGrid ? 'bg-[#18181b]' : 'bg-gray-200'}`}
-                                                    >
-                                                        <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${showGrid ? 'left-6' : 'left-1'}`} />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div className="h-px bg-black/5 w-full" />
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Background</span>
-                                                    <div className="flex gap-1">
-                                                        <button onClick={() => { setBgMode('solid'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'solid' ? 'bg-[#18181b] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Solid</button>
-                                                        <button onClick={() => { setBgMode('gradient'); setIsShaderMode(false); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'gradient' ? 'bg-[#18181b] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Gradient</button>
-                                                        <button onClick={() => { setBgMode('shader'); setIsShaderMode(true); }} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${bgMode === 'shader' ? 'bg-[#18181b] text-white' : 'bg-white/40 text-gray-600 hover:bg-white/60'}`}>Shader</button>
-                                                    </div>
-                                                </div>
-                                                {bgMode === 'gradient' && (
-                                                    <div className="flex justify-between gap-2 pt-1">
-                                                        {[0, 1, 2].map((i) => (
-                                                            <motion.div key={i} className="w-8 h-8 rounded-full border border-black/10 relative overflow-hidden shadow-sm cursor-pointer hover:scale-110 transition-transform">
-                                                                <input type="color" value={palette[i] || '#ffffff'} onChange={(e) => updatePaletteColor(i, e.target.value)} className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0" />
-                                                                <div className="w-full h-full" style={{ backgroundColor: palette[i] }} />
-                                                            </motion.div>
-                                                        ))}
-                                                        <button onClick={() => updatePaletteFromAllImages([], true)} className="ml-auto text-[10px] text-gray-500 hover:text-[#18181b] flex items-center gap-1 px-2 py-1 rounded hover:bg-[#18181b]/10 transition-colors"><RefreshCw size={10} /> Shuffle</button>
-                                                    </div>
-                                                )}
-                                                {bgMode === 'solid' && (
-                                                    <div className="flex gap-2 overflow-x-auto pt-1 pb-1">
-                                                        {['#FFFFFF', '#F3F4F6', '#000000', '#1a1a1a'].map(c => (<button key={c} onClick={() => setBackground(c)} className="w-6 h-6 rounded-full border border-black/10 flex-shrink-0" style={{ backgroundColor: c }} />))}
-                                                        <div className="w-6 h-6 rounded-full border border-black/10 relative overflow-hidden"><input type="color" value={background} onChange={(e) => setBackground(e.target.value)} className="absolute -top-2 -left-2 w-10 h-10 opacity-0 cursor-pointer" /><div className="w-full h-full" style={{ backgroundColor: background }} /></div>
-                                                    </div>
-                                                )}
-                                                {bgMode === 'shader' && (
-                                                    <div className="space-y-2 pt-2 border-t border-black/5 mt-2">
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <span className="text-xs font-medium text-gray-600">Mode</span>
-                                                            <div className="flex bg-gray-200 rounded-lg p-0.5">
-                                                                <button
-                                                                    onClick={() => setShaderMode('soft')}
-                                                                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'soft' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-                                                                >
-                                                                    Soft
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => setShaderMode('extreme')}
-                                                                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${shaderMode === 'extreme' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-                                                                >
-                                                                    Extreme
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <span className="text-xs font-medium text-gray-600">Visual</span>
-                                                            <button
-                                                                onClick={() => {
-                                                                    const candidates = items.filter(i => i.type === 'image' || i.type === 'video');
-                                                                    if (candidates.length > 0) {
-                                                                        const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
-                                                                        setShaderItemId(randomItem.id);
-                                                                    }
-                                                                }}
-                                                                className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white shadow-sm text-gray-800 hover:bg-gray-50 flex items-center gap-1"
-                                                            >
-                                                                <Shuffle size={10} />
-                                                                Shuffle
-                                                            </button>
-                                                        </div>
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="text-xs font-medium text-gray-600">Motion Blur</span>
-                                                            <button
-                                                                onClick={() => setEnableMotionBlur(!enableMotionBlur)}
-                                                                className={`w-10 h-5 rounded-full relative transition-colors ${enableMotionBlur ? 'bg-[#18181b]' : 'bg-gray-200'}`}
-                                                            >
-                                                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${enableMotionBlur ? 'left-6' : 'left-1'}`} />
-                                                            </button>
-                                                        </div>
-                                                        {enableMotionBlur && (
-                                                            <div className="space-y-1">
-                                                                <div className="flex justify-between text-[10px] text-gray-400">
-                                                                    <span>Intensity</span>
-                                                                    <span>{Math.round(motionBlurIntensity * 100)}%</span>
-                                                                </div>
-                                                                <input
-                                                                    type="range"
-                                                                    min="0"
-                                                                    max="1"
-                                                                    step="0.01"
-                                                                    value={motionBlurIntensity}
-                                                                    onChange={(e) => setMotionBlurIntensity(parseFloat(e.target.value))}
-                                                                    className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors"
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="h-px bg-black/5 w-full" />
-                                            <div className="space-y-3">
-                                                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Elements</h4>
-                                                <div className="space-y-2">
-                                                    <div className="flex justify-between items-center"><span className="text-xs font-medium text-gray-600">Text Size</span><span className="text-[10px] font-mono text-gray-500">{quoteSize}px</span></div>
-                                                    <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#18181b] hover:bg-gray-300 transition-colors" />
-                                                </div>
-                                                <div className="flex items-center justify-between pt-1">
-                                                    <span className="text-xs font-medium text-gray-600">Image Frames</span>
-                                                    <button onClick={() => setShowBorders(!showBorders)} className={`w-12 h-6 rounded-full p-1 transition-colors ${showBorders ? 'bg-[#18181b]' : 'bg-gray-200'}`}><div className={`w-4 h-4 rounded-full shadow-sm transition-transform ${showBorders ? 'translate-x-6 bg-white' : 'bg-white'}`} /></button>
-                                                </div>
-                                                <div className="flex items-center justify-between pt-1">
-                                                    <span className="text-xs font-medium text-gray-600">Typography</span>
-                                                    <button onClick={cycleFonts} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-[10px] font-medium text-gray-600 transition-colors">
-                                                        <CaseUpper size={12} />
-                                                        <span>Change Font</span>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                toggleLayoutMode('grid');
+                                                setViewMode('editor');
+                                                setIsPaused(false);
+                                            }}
+                                            className="flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-md border border-[#e1e1e1] rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] hover:bg-white text-black transition-all group"
+                                        >
+                                            <X size={16} className="text-[#525252] group-hover:text-black transition-colors" strokeWidth={2} />
+                                            <span className="text-[14px] font-medium leading-[21px]">Exit Slideshow</span>
+                                        </button>
                                     </motion.div>
                                 )}
                             </AnimatePresence>
                         </div>
                     )}
 
-                    {/* --- DOCK --- */}
-                    {
-                        !isExporting && (
-                            <div
-                                id="dock-controls"
-                                className="absolute left-4 right-4 md:bottom-8 md:right-8 md:left-auto md:w-auto z-[9999] flex flex-col items-center md:items-end gap-4 pointer-events-none transition-all duration-300"
-                                style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
-                            >
-                                {/* REMOVED SETTINGS PANEL FROM BOTTOM */}
+                    {/* --- STYLE SETTINGS PANEL --- */}
+                    {!isExporting && (
+                        <AnimatePresence>
+                            {showSettings && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                                    className="fixed bottom-[150px] left-1/2 -translate-x-1/2 flex flex-col gap-[18px] p-[28px] rounded-[20px] bg-white border border-[#e1e1e1] shadow-[0_8px_32px_rgba(0,0,0,0.08)] pointer-events-auto origin-bottom"
+                                    style={{ width: 'auto', minWidth: 340, zIndex: 10000 }}
+                                >
+                                    {/* Tab header — Figma: gap-[12px] */}
+                                    <div className="flex gap-[12px] items-center text-[14px] leading-[21px]">
+                                        <button
+                                            onClick={() => setSettingsTab('dashboard')}
+                                            className={`transition-colors ${(settingsTab || 'dashboard') === 'dashboard' ? 'font-semibold text-black' : 'font-medium text-[#bcbcbc] hover:text-[#1e1e1e]'}`}
+                                        >
+                                            Dashboard
+                                        </button>
+                                        <button
+                                            onClick={() => setSettingsTab('item')}
+                                            className={`transition-colors ${(settingsTab || 'dashboard') === 'item' ? 'font-semibold text-[#1e1e1e]' : 'font-medium text-[#bcbcbc] hover:text-[#1e1e1e]'}`}
+                                        >
+                                            Item
+                                        </button>
+                                    </div>
 
-                                {/* UPDATED MENU: Frosted Light Theme */}
-                                <div className="flex items-center gap-2 p-2 rounded-3xl bg-white/60 backdrop-blur-2xl shadow-2xl border-[3px] border-white/20 max-w-full overflow-x-auto pointer-events-auto no-scrollbar transition-all duration-500 ease-in-out touch-pan-x">
-                                    <AnimatePresence mode="wait" initial={false}>
-                                        {isDockExpanded && (
-                                            <motion.div
-                                                initial={{ width: 0, opacity: 0, overflow: "hidden" }}
-                                                animate={{ width: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }}
-                                                exit={{ width: 0, opacity: 0, overflow: "hidden" }}
-                                                transition={{ duration: 0.4, ease: "easeInOut" }}
-                                                className="flex items-center gap-2"
-                                            >
-                                                <DockButton onClick={() => fileInputRef.current?.click()} icon={Plus} label="Add Image" />
-                                                <DockButton onClick={addQuote} icon={Type} label="Add Text" />
-                                                <input type="file" multiple accept="image/*,video/mp4,audio/mpeg,audio/mp3,application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-
-                                                {/* UPDATED: Gen Ref Image Button with Glow */}
-                                                <DockButton
-                                                    id="tour-ai-image" // Tour Target
-                                                    onClick={handleAiGenerate}
-                                                    icon={isGeneratingAI ? Loader : MagicIcon}
-                                                    label={isGeneratingAI ? "Generating..." : (window.innerWidth < 768 ? "Gen AI" : "Gen Ref Image")}
-                                                    active={isGeneratingAI}
-                                                    className="ai-button-glow" // Apply the glow class here
-                                                />
-                                                {/* Add a spinner animation to the icon if generating */}
-                                                {isGeneratingAI && (
-                                                    <style>{`
-                                    .lucide-loader { animation: spin 2s linear infinite; }
-                                    @keyframes spin { 100% { transform: rotate(360deg); } }
-                                `}</style>
-                                                )}
-
-                                                <div className="w-px h-8 bg-black/10 mx-1" />
-
-                                                {/* MOVED: Show Button to left */}
-                                                <DockButton
-                                                    id="tour-show"
-                                                    onClick={() => {
-                                                        setViewMode('editor');
-                                                        if (layoutMode === 'animate') {
-                                                            setIsPaused(!isPaused);
-                                                        } else {
-                                                            toggleLayoutMode('animate');
-                                                            setIsPaused(false);
-                                                        }
-                                                    }}
-                                                    icon={layoutMode === 'animate' && !isPaused ? Pause : Play}
-                                                    label={layoutMode === 'animate' ? (isPaused ? "Play" : "Pause") : "Show"}
-                                                    active={layoutMode === 'animate' && viewMode === 'editor'}
-                                                />
-
-                                                <div className="w-px h-8 bg-black/10 mx-1" />
-
-                                                <div id="tour-layout" className="flex gap-2">
-                                                    <DockButton onClick={() => { toggleLayoutMode('organic'); setViewMode('editor'); }} icon={InfinityIcon} label="Dynamic" active={layoutMode === 'organic' && viewMode === 'editor'} />
-                                                    <DockButton onClick={() => { toggleLayoutMode('grid'); setViewMode('editor'); }} icon={Grid2X2} label="Grid" active={layoutMode === 'grid' && viewMode === 'editor'} />
+                                    {/* Separator + content — Figma: border-t, pt-[32px], gap-[32px] between rows */}
+                                    <div className="border-t border-[#f2f2f2] pt-[32px] flex flex-col gap-[32px]">
+                                        {(settingsTab || 'dashboard') === 'dashboard' && (
+                                            <>
+                                                {/* Radius */}
+                                                <div className="flex gap-[38px] items-center">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0">Radius</span>
+                                                    <div className="flex gap-5 items-center flex-1">
+                                                        <span className="text-[14px] font-normal leading-[21px] text-[#1e1e1e] w-[36px] shrink-0">{dashboardRadius}px</span>
+                                                        <input type="range" min="0" max="60" value={dashboardRadius} onChange={(e) => setDashboardRadius(Number(e.target.value))} className="flex-1 mood-slider" />
+                                                    </div>
                                                 </div>
 
+                                                {/* Grid */}
+                                                <div className="flex gap-[38px] items-center">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0">Grid</span>
+                                                    <div className="flex gap-5 items-center">
+                                                        <button
+                                                            onClick={() => setShowGrid(!showGrid)}
+                                                            className={`text-[14px] font-normal leading-[21px] transition-colors ${showGrid ? 'text-[#1e1e1e]' : 'text-[#6f6f6f]'}`}
+                                                        >
+                                                            {showGrid ? 'On' : 'Off'}
+                                                        </button>
+                                                        {showGrid && (
+                                                            <button
+                                                                onClick={() => setGridType(prev => prev === 'square' ? 'dot' : 'square')}
+                                                                className="text-[14px] font-normal leading-[21px] text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors"
+                                                            >
+                                                                {gridType === 'dot' ? 'Dotted' : 'Square'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
 
-                                            </motion.div>
+                                                {/* Typography */}
+                                                <div className="flex gap-[38px] items-center">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0">Typography</span>
+                                                    <button
+                                                        onClick={cycleFonts}
+                                                        className="text-[14px] font-normal leading-[21px] text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors"
+                                                    >
+                                                        Public Sans
+                                                    </button>
+                                                </div>
+
+                                                {/* Background — Figma: label 100px, gap-[38px], control row gap-[10px] (Solid + circle) */}
+                                                <div className="flex gap-[38px] items-start">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0 pt-0.5">Background</span>
+                                                    <div className="flex flex-col gap-[10px]">
+                                                        {/* Mode selector + Solid picker on same row with gap-[10px] when Solid */}
+                                                        <div className="flex gap-5 items-center flex-wrap">
+                                                            <div className="flex items-center gap-[10px]">
+                                                                <button
+                                                                    onClick={() => { setBgMode('solid'); setIsShaderMode(false); }}
+                                                                    className={`text-[14px] font-normal leading-[21px] transition-colors ${bgMode === 'solid' ? 'text-[#1e1e1e]' : 'text-[#6f6f6f] hover:text-[#1e1e1e]'}`}
+                                                                >
+                                                                    Solid
+                                                                </button>
+                                                                {bgMode === 'solid' && <MinimalColorPicker value={background} onChange={setBackground} />}
+                                                            </div>
+                                                            <button
+                                                                onClick={() => { setBgMode('gradient'); setIsShaderMode(false); }}
+                                                                className={`text-[14px] font-normal leading-[21px] transition-colors ${bgMode === 'gradient' ? 'text-[#1e1e1e]' : 'text-[#6f6f6f] hover:text-[#1e1e1e]'}`}
+                                                            >
+                                                                Gradient
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { setBgMode('shader'); setIsShaderMode(true); }}
+                                                                className={`text-[14px] font-medium leading-[21px] transition-colors ${bgMode === 'shader' ? '' : 'text-[#6f6f6f] hover:text-[#1e1e1e]'}`}
+                                                                style={bgMode === 'shader' ? { background: 'linear-gradient(149deg, #9c633f 7%, #4e4e4e 116%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' } : {}}
+                                                            >
+                                                                Shader
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Gradient: 3 color picker circles */}
+                                                        {bgMode === 'gradient' && (
+                                                            <div className="flex gap-2 items-center">
+                                                                {[0, 1, 2].map((i) => (
+                                                                    <MinimalColorPicker
+                                                                        key={i}
+                                                                        value={palette[i] || '#ffffff'}
+                                                                        onChange={(hex) => updatePaletteColor(i, hex)}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Shader: Soft / Blur On / Shuffle */}
+                                                        {bgMode === 'shader' && (
+                                                            <div className="flex gap-5 items-center text-[14px] leading-[21px]">
+                                                                <button
+                                                                    onClick={() => setShaderMode(shaderMode === 'soft' ? 'extreme' : 'soft')}
+                                                                    className={`font-normal transition-colors ${shaderMode === 'soft' ? 'text-[#6f6f6f]' : 'text-[#6f6f6f]'}`}
+                                                                >
+                                                                    {shaderMode === 'soft' ? 'Soft' : 'Extreme'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setEnableMotionBlur(!enableMotionBlur)}
+                                                                    className={`font-medium transition-colors ${enableMotionBlur ? 'text-[#1e1e1e]' : 'text-[#6f6f6f]'}`}
+                                                                >
+                                                                    Blur {enableMotionBlur ? 'On' : 'Off'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const candidates = items.filter(i => i.type === 'image' || i.type === 'video');
+                                                                        if (candidates.length > 0) {
+                                                                            const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
+                                                                            setShaderItemId(randomItem.id);
+                                                                        }
+                                                                    }}
+                                                                    className="font-normal text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors"
+                                                                >
+                                                                    Shuffle
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </>
                                         )}
-                                    </AnimatePresence>
-                                    <DockButton
-                                        onClick={() => setIsDockExpanded(!isDockExpanded)}
-                                        icon={isDockExpanded ? ChevronRight : ChevronLeft}
-                                        label={isDockExpanded ? "Collapse" : "Expand"}
-                                    />
-                                </div>
+
+                                        {(settingsTab || 'dashboard') === 'item' && (
+                                            <>
+                                                {/* Text Size */}
+                                                <div className="flex gap-[38px] items-center">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0">Text Size</span>
+                                                    <div className="flex gap-5 items-center flex-1">
+                                                        <span className="text-[14px] font-normal leading-[21px] text-[#1e1e1e] w-[36px] shrink-0">{quoteSize}px</span>
+                                                        <input type="range" min="12" max="48" value={quoteSize} onChange={(e) => setQuoteSize(Number(e.target.value))} className="flex-1 mood-slider" />
+                                                    </div>
+                                                </div>
+
+                                                {/* Border Style */}
+                                                <div className="flex gap-[38px] items-center">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0">Border Style</span>
+                                                    <div className="flex gap-5 items-center">
+                                                        <button
+                                                            onClick={() => setShowBorders(!showBorders)}
+                                                            className={`text-[14px] font-normal leading-[21px] transition-colors ${showBorders ? 'text-[#1e1e1e]' : 'text-[#6f6f6f]'}`}
+                                                        >
+                                                            {showBorders ? 'On' : 'Off'}
+                                                        </button>
+                                                        {showBorders && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => setBorderStyle('glass')}
+                                                                    className={`text-[14px] font-normal leading-[21px] transition-colors ${borderStyle === 'glass' ? 'text-[#1e1e1e]' : 'text-[#6f6f6f]'}`}
+                                                                >
+                                                                    Glass
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setBorderStyle('filled')}
+                                                                    className={`text-[14px] font-normal leading-[21px] transition-colors ${borderStyle === 'filled' ? 'text-[#1e1e1e]' : 'text-[#6f6f6f]'}`}
+                                                                >
+                                                                    Filled
+                                                                </button>
+                                                                {borderStyle === 'filled' && (
+                                                                    <MinimalColorPicker value={borderColor} onChange={setBorderColor} />
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Border Thickness */}
+                                                <div className="flex gap-[38px] items-center">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0">Border Thickness</span>
+                                                    <div className="flex gap-5 items-center flex-1">
+                                                        <span className="text-[14px] font-normal leading-[21px] text-[#1e1e1e] w-[36px] shrink-0">{borderThickness}px</span>
+                                                        <input type="range" min="0" max="40" value={borderThickness} onChange={(e) => setBorderThickness(Number(e.target.value))} className="flex-1 mood-slider" />
+                                                    </div>
+                                                </div>
+
+                                                {/* Border Radius */}
+                                                <div className="flex gap-[38px] items-center">
+                                                    <span className="w-[100px] text-[14px] font-medium leading-[21px] text-black shrink-0">Border Radius</span>
+                                                    <div className="flex gap-5 items-center flex-1">
+                                                        <span className="text-[14px] font-normal leading-[21px] text-[#1e1e1e] w-[36px] shrink-0">{imageRadius}px</span>
+                                                        <input type="range" min="0" max="60" value={imageRadius} onChange={(e) => setImageRadius(Number(e.target.value))} className="flex-1 mood-slider" />
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    )}
+
+                    {/* --- BOTTOM DOCK (Figma 79:300) --- */}
+                    {!isExporting && (
+                        <div
+                            id="dock-controls"
+                            className="absolute left-1/2 -translate-x-1/2 z-[9999] flex flex-col items-center pointer-events-none"
+                            style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
+                        >
+                            <div className="flex items-center gap-[10px] p-[10px] rounded-[20px] bg-white border border-[#e1e1e1] shadow-[0_8px_32px_rgba(0,0,0,0.08)] pointer-events-auto">
+                                <AddDockButton
+                                    onAddImage={() => fileInputRef.current?.click()}
+                                    onAddVideo={() => fileInputRef.current?.click()}
+                                    onAddText={addQuote}
+                                />
+                                <input type="file" multiple accept="image/*,video/mp4,audio/mpeg,audio/mp3,application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                                <GenerateDockButton
+                                    id="tour-ai-image"
+                                    onClick={handleAiGenerate}
+                                    isGenerating={isGeneratingAI}
+                                />
+                                <BottomDockButton onClick={handleShuffle} iconSrc={ShuffleSimpleIcon} iconSrcHover={ShuffleSimpleBlackIcon} label="Shuffle" />
+                                <BottomDockButton
+                                    id="tour-style"
+                                    onClick={() => setShowSettings(!showSettings)}
+                                    icon={SlidersHorizontal}
+                                    label="Style"
+                                    active={showSettings}
+                                />
+                                <BottomDockButton
+                                    id="tour-show"
+                                    onClick={() => {
+                                        if (layoutMode === 'animate') {
+                                            setIsPaused(!isPaused);
+                                        } else {
+                                            toggleLayoutMode('animate');
+                                            setViewMode('editor');
+                                            setIsPaused(false);
+                                        }
+                                    }}
+                                    iconSrc={SlideshowIcon}
+                                    iconSrcHover={SlideshowBlackIcon}
+                                    label="Slideshow"
+                                    roundedClass="rounded-[8px]"
+                                    active={layoutMode === 'animate' && viewMode === 'editor'}
+                                />
                             </div>
-                        )
-                    }
+                        </div>
+                    )}
                 </div>
-            </div>
+            </div >
             <TourGuide onStepChange={handleTourStepChange} onComplete={() => setHasSeenTour(true)} />
-        </div>
+        </div >
     );
 };
 

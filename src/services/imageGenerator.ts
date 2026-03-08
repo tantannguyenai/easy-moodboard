@@ -74,7 +74,19 @@ export async function generateMoodImageFromBoard(
     return null;
   }
 
-  const promptText = `Generate a new moodboard image that perfectly blends the visual style, color palette, and atmospheric vibe of these reference images. Create something new that feels like it belongs in this collection.`;
+  const promptText = `
+Generate ONE new image (a single frame), not a collage.
+
+Treat the reference images ONLY as style guides for color, mood, lighting, subject matter and composition.
+Do NOT copy, tile, or paste elements from the originals.
+Do NOT put the references into a container, frame, grid, or UI mockup.
+Do NOT show multiple panels, storyboards, or screenshots.
+
+Instead, imagine a fresh scene that could exist in the same universe as the most recent reference images:
+- match their overall vibe, palette and atmosphere
+- but change the arrangement, perspective and details
+- output a clean, standalone image that fills the frame.
+  `.trim();
 
   try {
     const requestBody = {

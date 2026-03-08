@@ -12,6 +12,8 @@ interface PDFFlipBookProps {
     height: number;
     showBorders?: boolean;
     borderThickness?: number;
+    borderStyle?: 'glass' | 'filled';
+    borderColor?: string;
     imageRadius?: number;
     children?: ReactNode;
     previewOnly?: boolean;
@@ -33,6 +35,8 @@ export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
         file,
         showBorders = false,
         borderThickness = 0,
+        borderStyle = 'glass',
+        borderColor = '#ffffff',
         imageRadius = 0,
         children,
         previewOnly = false,
@@ -105,16 +109,20 @@ export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
     // Only render PDF if we have valid dimensions
     const canRender = renderWidth > 0 && renderHeight > 0;
 
+    const isGlass = borderStyle === 'glass';
+    const strokeColor = isGlass ? 'rgba(255,255,255,0.2)' : borderColor;
+    const outlineColor = isGlass ? 'rgba(209, 213, 219, 0.6)' : borderColor;
+
     return (
         <div
             ref={containerRef}
-            className={`w-full h-full flex items-start justify-start overflow-hidden relative transition-all duration-300 ${showBorders ? 'bg-white' : ''}`}
+            className={`w-full h-full flex items-start justify-start overflow-hidden relative transition-all duration-300 ${showBorders && isGlass ? 'bg-white' : ''}`}
             style={{
                 borderRadius: `${imageRadius}px`,
                 boxShadow: showBorders
-                    ? `0 0 0 ${borderThickness}px rgba(255,255,255,0.2), 0 25px 50px -12px rgba(0,0,0,0.5)`
+                    ? `0 0 0 ${borderThickness}px ${strokeColor}, 0 25px 50px -12px rgba(0,0,0,0.5)`
                     : 'none',
-                outline: showBorders ? '1px solid rgba(209, 213, 219, 0.6)' : 'none',
+                outline: showBorders ? `1px solid ${outlineColor}` : 'none',
                 outlineOffset: showBorders ? `${borderThickness}px` : '0px'
             }}
             onPointerDown={(e) => e.stopPropagation()}

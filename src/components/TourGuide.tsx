@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, ChevronRight } from 'lucide-react';
+import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type TourStep = {
@@ -11,16 +11,16 @@ type TourStep = {
 
 const TOUR_STEPS: TourStep[] = [
     {
-        targetId: 'moodboard-canvas', // Target the canvas specifically
-        title: "Welcome to Mood",
-        description: "Welcome! We've added some examples to get you started. Drag & drop them, or add your own images, videos, or text to curate your vibe.",
-        position: 'bottom' // Position relative to center of canvas
+        targetId: 'moodboard-canvas',
+        title: "Welcome :)",
+        description: "We've added some examples to get you started. Drag & drop them, or add your own images, videos, or text to curate your vibe.",
+        position: 'bottom'
     },
     {
         targetId: 'tour-style',
         title: "Customize Look",
         description: "Change the look of the image/video containers in settings.",
-        position: 'bottom' // Position bottom since button is at top-right
+        position: 'bottom'
     },
     {
         targetId: 'tour-show',
@@ -36,8 +36,6 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
     const [coords, setCoords] = useState<{ x: number, y: number, arrowOffset: number, placement: string }>({ x: 0, y: 0, arrowOffset: 0, placement: 'bottom' });
     const [targetRect, setTargetRect] = useState<{ rect: DOMRect; step: number } | null>(null);
 
-
-
     const tooltipRef = useRef<HTMLDivElement>(null);
 
     const updatePosition = () => {
@@ -50,8 +48,7 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
             setTargetRect({ rect, step: currentStep });
 
             const gap = 12;
-            // Measure actual width/height if available, fallback to defaults
-            const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 320;
+            const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 362;
             const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 200;
             const screenPadding = 24;
             const viewportWidth = document.documentElement.clientWidth;
@@ -61,54 +58,37 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
             let arrowOffset = 0;
 
             let effectivePosition = step.position;
-            // Force vertical positioning on mobile for side-aligned steps
             if (viewportWidth < 768 && (step.position === 'left' || step.position === 'right')) {
                 effectivePosition = 'bottom';
             }
 
             if (step.targetId === 'moodboard-canvas') {
-                // Center of the canvas
                 x = rect.left + rect.width / 2;
                 y = rect.top + rect.height / 2;
-                // Adjust for tooltip center
                 x -= tooltipWidth / 2;
                 y -= tooltipHeight / 2;
             } else {
                 switch (effectivePosition) {
-                    case 'top':
-                        // Initial X is center of target
+                    case 'top': {
                         x = rect.left + rect.width / 2;
-                        // Initial Y is ABOVE the target (subtract gap AND height)
                         y = rect.top - gap - tooltipHeight;
-
-                        // Center tooltip horizontally relative to X
                         x -= tooltipWidth / 2;
-
-                        // Clamp X to keep tooltip on screen
                         const minX = screenPadding;
                         const maxX = viewportWidth - screenPadding - tooltipWidth;
-
-                        // const originalX = x; // Unused
                         x = Math.max(minX, Math.min(x, maxX));
-
-                        // Calculate arrow offset to keep it pointing at target center
-                        // Target center X is (rect.left + rect.width / 2)
-                        // Tooltip center X is (x + tooltipWidth / 2)
-                        // Offset is difference
                         arrowOffset = (rect.left + rect.width / 2) - (x + tooltipWidth / 2);
                         break;
-                    case 'bottom':
+                    }
+                    case 'bottom': {
                         x = rect.left + rect.width / 2;
                         y = rect.bottom + gap;
-
                         x -= tooltipWidth / 2;
-
                         const minXBottom = screenPadding;
                         const maxXBottom = viewportWidth - screenPadding - tooltipWidth;
                         x = Math.max(minXBottom, Math.min(x, maxXBottom));
-
                         arrowOffset = (rect.left + rect.width / 2) - (x + tooltipWidth / 2);
                         break;
+                    }
                     case 'left':
                         x = rect.left - gap - tooltipWidth;
                         y = rect.top + rect.height / 2 - tooltipHeight / 2;
@@ -120,7 +100,6 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
                 }
             }
 
-            // Clamp arrow offset to keep it within the tooltip (with padding)
             const maxArrowOffset = (tooltipWidth / 2) - 24;
             arrowOffset = Math.max(-maxArrowOffset, Math.min(arrowOffset, maxArrowOffset));
 
@@ -131,10 +110,8 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
     useEffect(() => {
         if (!isVisible) return;
 
-        // Notify parent of step change
         onStepChange?.(currentStep);
 
-        // Small delay to ensure DOM is ready
         const timer = setTimeout(updatePosition, 100);
         window.addEventListener('resize', updatePosition);
 
@@ -154,7 +131,6 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
 
     const handleClose = () => {
         setIsVisible(false);
-
         onComplete?.();
     };
 
@@ -166,7 +142,6 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
         <AnimatePresence>
             {isVisible && (
                 <>
-                    {/* Backdrop for first step only */}
                     {currentStep === 0 && (
                         <motion.div
                             initial={{ opacity: 0 }}
@@ -176,12 +151,11 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
                         />
                     )}
 
-                    {/* Highlight Effect for target */}
                     {targetRect && targetRect.step === currentStep && currentStep > 0 && (
                         <motion.div
                             layoutId="tour-highlight"
-                            className="fixed z-[10000] pointer-events-none border-2 rounded-xl shadow-[0_0_20px_rgba(24,24,27,0.4)]"
-                            style={{ borderColor: '#18181b' }}
+                            className="fixed z-[10000] pointer-events-none rounded-[20px]"
+                            style={{ border: '2px solid #ddd' }}
                             initial={false}
                             animate={{
                                 top: targetRect.rect.top - 4,
@@ -193,64 +167,58 @@ export const TourGuide = ({ onStepChange, onComplete }: { onStepChange?: (step: 
                         />
                     )}
 
-                    {/* Tooltip Card */}
+                    {/* Tooltip Card — Figma card style */}
                     <motion.div
                         ref={tooltipRef}
                         key={currentStep}
-                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                        initial={{ opacity: 0, scale: 0.95, y: 8 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
                         transition={{ type: "spring", duration: 0.5 }}
-                        className="fixed z-[10001] w-80 max-w-[calc(100vw-32px)] bg-white/90 backdrop-blur-xl p-6 rounded-2xl shadow-2xl border border-white/50"
+                        className="fixed z-[10001] w-[362px] max-w-[calc(100vw-32px)] bg-white rounded-[20px] border border-[#ddd] p-[28px]"
                         style={{
                             left: coords.x,
                             top: coords.y,
-                            // No transform needed for positioning anymore, handled by x/y calculation
+                            boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
                         }}
                     >
                         <button
                             onClick={handleClose}
-                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+                            className="absolute top-5 right-5 p-1 rounded-[8px] text-[#999] hover:text-black hover:bg-[#f2f2f2] transition-colors"
                         >
                             <X size={16} />
                         </button>
 
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center gap-2">
-                                <span className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold" style={{ backgroundColor: 'rgba(24,24,27,0.1)', color: '#18181b' }}>
-                                    {currentStep + 1}
-                                </span>
-                                <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-                                    {step.title}
-                                </h3>
-                            </div>
+                        <div className="flex flex-col gap-[18px]">
+                            <h3 className="text-[20px] font-medium leading-[22px] text-[#2a2a2a]">
+                                {step.title}
+                            </h3>
 
-                            <p className="text-gray-600 text-sm leading-relaxed">
+                            <p className="text-[14px] font-normal leading-[22px] text-[#6f6f6f]">
                                 {step.description}
                             </p>
+                        </div>
 
-                            <div className="flex items-center justify-between mt-2 pt-4 border-t border-gray-100">
-                                <span className="text-xs text-gray-400 font-medium">
-                                    {currentStep + 1} of {TOUR_STEPS.length}
-                                </span>
-                                <button
-                                    onClick={handleNext}
-                                    className="flex items-center gap-1 px-4 py-2 bg-black text-white text-xs font-bold uppercase tracking-wide rounded-lg hover:bg-gray-800 transition-colors shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform"
-                                >
-                                    {currentStep === TOUR_STEPS.length - 1 ? "Finish" : "Next"}
-                                    <ChevronRight size={14} />
-                                </button>
-                            </div>
+                        <div className="flex items-center justify-between mt-[26px]">
+                            <span className="text-[14px] text-[#999]">
+                                {currentStep + 1} of {TOUR_STEPS.length}
+                            </span>
+                            <button
+                                onClick={handleNext}
+                                className="px-[16px] py-[4px] bg-[#f8f8f8] border border-[#e6e6e6] rounded-[8px] text-[14px] text-black hover:bg-[#e6e6e6] transition-colors"
+                            >
+                                {currentStep === TOUR_STEPS.length - 1 ? "Finish" : "Next"}
+                            </button>
                         </div>
 
                         {/* Arrow Pointer */}
                         {step.targetId !== 'moodboard-canvas' && (
                             <div
-                                className={`absolute w-4 h-4 bg-white/90 border-l border-t border-white/50 transform rotate-45
-                                    ${coords.placement === 'top' ? 'bottom-[-8px] border-l-0 border-t-0 border-r border-b shadow-sm' : ''}
-                                    ${coords.placement === 'bottom' ? 'top-[-8px] shadow-[-2px_-2px_5px_rgba(0,0,0,0.05)]' : ''}
-                                    ${coords.placement === 'left' ? 'right-[-8px] top-1/2 -translate-y-1/2 border-l-0 border-b-0 border-r border-t shadow-sm' : ''}
-                                    ${coords.placement === 'right' ? 'left-[-8px] top-1/2 -translate-y-1/2 border-r-0 border-t-0 border-l border-b shadow-[-2px_2px_5px_rgba(0,0,0,0.05)]' : ''}
+                                className={`absolute w-3.5 h-3.5 bg-white transform rotate-45
+                                    ${coords.placement === 'top' ? 'bottom-[-7px] border-r border-b border-[#ddd]' : ''}
+                                    ${coords.placement === 'bottom' ? 'top-[-7px] border-l border-t border-[#ddd]' : ''}
+                                    ${coords.placement === 'left' ? 'right-[-7px] top-1/2 -translate-y-1/2 border-r border-t border-[#ddd]' : ''}
+                                    ${coords.placement === 'right' ? 'left-[-7px] top-1/2 -translate-y-1/2 border-l border-b border-[#ddd]' : ''}
                                 `}
                                 style={{
                                     left: (coords.placement === 'top' || coords.placement === 'bottom')
