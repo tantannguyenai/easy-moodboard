@@ -1,10 +1,60 @@
-import { useState, forwardRef, useEffect, useRef, type FC, type ReactNode } from 'react';
+import { useState, forwardRef, useEffect, useRef, useCallback, type FC, type ReactNode } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import HTMLFlipBook from 'react-pageflip';
-import { Loader } from 'lucide-react';
+import { Loader, Volume2, VolumeX } from 'lucide-react';
 
 // Configure worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+/** Play a short page-flip sound. Uses local /page-flip.mp3 (paper flip from SoundJay, free for non-commercial use). */
+function playFlipSound() {
+    const snd = new Audio('/page-flip.mp3');
+    snd.volume = 0.5;
+    snd.play().catch(() => {
+        playProceduralFlipSound();
+    });
+}
+
+/** Procedural page-flip sound (soft paper rustle + light thud) via Web Audio API. */
+function playProceduralFlipSound() {
+    try {
+        const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        const now = ctx.currentTime;
+        const bufSize = ctx.sampleRate * 0.08;
+        const buffer = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.3));
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        const noiseFilter = ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 1200;
+        noiseFilter.Q.value = 1;
+        noise.connect(noiseFilter);
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.12, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(ctx.destination);
+        noise.start(now);
+        noise.stop(now + 0.08);
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.06);
+        const thudGain = ctx.createGain();
+        thudGain.gain.setValueAtTime(0.08, now);
+        thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        osc.connect(thudGain);
+        thudGain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.06);
+    } catch {
+        // ignore if AudioContext unavailable
+    }
+}
 
 interface PDFFlipBookProps {
     file: string;
@@ -52,6 +102,7 @@ export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
 
     const [numPages, setNumPages] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isMuted, setIsMuted] = useState(false);
 
     function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
         setNumPages(numPages);
@@ -71,6 +122,10 @@ export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
             onAspectRatioChange(ratio);
         }
     }
+
+    const handleFlip = useCallback((_e: { data: number }) => {
+        if (!isMuted) playFlipSound();
+    }, [isMuted]);
 
     // Resize Observer with Debounce/Throttling
     useEffect(() => {
@@ -116,7 +171,7 @@ export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
     return (
         <div
             ref={containerRef}
-            className={`w-full h-full flex items-start justify-start overflow-hidden relative transition-all duration-300 ${showBorders && isGlass ? 'bg-white' : ''}`}
+            className={`group w-full h-full flex items-start justify-start overflow-hidden relative transition-all duration-300 ${showBorders && isGlass ? 'bg-white' : ''}`}
             style={{
                 borderRadius: `${imageRadius}px`,
                 boxShadow: showBorders
@@ -131,6 +186,18 @@ export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
                 <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-50/50 backdrop-blur-sm transition-opacity duration-300">
                     <Loader className="w-8 h-8 text-gray-400 animate-spin" />
                 </div>
+            )}
+
+            {canRender && !previewOnly && numPages && (
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setIsMuted((m) => !m); }}
+                    className="absolute top-2 left-2 z-20 p-1.5 rounded-md bg-white/90 hover:bg-white border border-gray-200/80 shadow-sm text-gray-600 hover:text-gray-800 transition-opacity duration-200 opacity-0 group-hover:opacity-100"
+                    title={isMuted ? 'Unmute flip sound' : 'Mute flip sound'}
+                    onPointerDown={(e) => e.stopPropagation()}
+                >
+                    {isMuted ? <VolumeX size={16} strokeWidth={1.5} /> : <Volume2 size={16} strokeWidth={1.5} />}
+                </button>
             )}
 
             {canRender && (
@@ -159,27 +226,28 @@ export const PDFFlipBook: FC<PDFFlipBookProps> = (props) => {
                                 key={`flipbook-${renderWidth}-${renderHeight}`} // Remount only when settled size changes
                                 width={renderWidth}
                                 height={renderHeight}
-                                size="fixed" // Explicitly fix to container size
+                                size="fixed"
                                 minWidth={10}
                                 maxWidth={5000}
                                 minHeight={10}
                                 maxHeight={5000}
-                                maxShadowOpacity={0.5}
+                                maxShadowOpacity={0.75}
                                 showCover={true}
                                 mobileScrollSupport={true}
-                                className=""
+                                className="pdf-flip-book"
                                 style={{}}
                                 startPage={0}
                                 drawShadow={true}
-                                flippingTime={1000}
+                                flippingTime={1500}
                                 usePortrait={true}
                                 startZIndex={0}
-                                autoSize={true} // Auto adjust single/double page
+                                autoSize={true}
                                 clickEventForward={true}
                                 useMouseEvents={true}
                                 swipeDistance={30}
                                 showPageCorners={true}
                                 disableFlipByClick={false}
+                                onFlip={handleFlip}
                             >
                                 {Array.from(new Array(numPages), (_, index) => (
                                     <PageWrapper key={`page_${index + 1}`}>

@@ -6,7 +6,7 @@ import {
     Download, X, Plus, Type, SlidersHorizontal, Scaling,
     ChevronLeft, ChevronRight,
     Copy, Play, Pause, Loader, RotateCw, Music, FileImage,
-    Image as ImageIcon, Video
+    Image as ImageIcon, Video, Volume2
 } from 'lucide-react';
 // Ensure this path matches where you put the file
 import { generateMoodImageFromBoard } from './services/imageGenerator';
@@ -779,7 +779,75 @@ const LoadingCards = () => (
 // --- AUDIO PLAYER COMPONENT ---
 const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
     const [isPlaying, setIsPlaying] = useState(false);
+    const [isHovered, setIsHovered] = useState(false);
+    const [volume, setVolume] = useState(1);
+    const [audioReactiveLevel, setAudioReactiveLevel] = useState(0); // 0–1, drives shader reaction
     const audioRef = useRef<HTMLAudioElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [size, setSize] = useState({ w: 400, h: 100 });
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+    const analyserRef = useRef<AnalyserNode | null>(null);
+    const rafRef = useRef<number>(0);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const el = containerRef.current;
+        const observer = new ResizeObserver(() => {
+            setSize({ w: el.clientWidth || 400, h: el.clientHeight || 100 });
+        });
+        observer.observe(el);
+        setSize({ w: el.clientWidth || 400, h: el.clientHeight || 100 });
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (audioRef.current) audioRef.current.volume = volume * 0.5;
+    }, [volume]);
+
+    // Audio analysis: when playing, drive shader from volume/rhythm
+    useEffect(() => {
+        if (!isPlaying || !audioRef.current) {
+            setAudioReactiveLevel(0);
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            return;
+        }
+        const el = audioRef.current;
+        const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        const source = ctx.createMediaElementSource(el);
+        source.connect(ctx.destination);
+        const analyser = ctx.createAnalyser();
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.7;
+        audioContextRef.current = ctx;
+        sourceRef.current = source;
+        analyserRef.current = analyser;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        let smoothed = 0;
+
+        const tick = () => {
+            if (!analyserRef.current) return;
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const sum = dataArray.reduce((a, b) => a + b, 0);
+            const avg = sum / dataArray.length / 255;
+            const bass = (dataArray[0] + dataArray[1] + dataArray[2]) / 3 / 255;
+            const level = Math.min(1, avg * 1.2 + bass * 0.3);
+            smoothed = smoothed * 0.85 + level * 0.15;
+            setAudioReactiveLevel(smoothed);
+            rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+
+        return () => {
+            cancelAnimationFrame(rafRef.current);
+            try { ctx.close(); } catch { /* ignore */ }
+            audioContextRef.current = null;
+            sourceRef.current = null;
+            analyserRef.current = null;
+        };
+    }, [isPlaying]);
 
     const togglePlay = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -795,6 +863,9 @@ const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
 
     return (
         <div
+            ref={containerRef}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
             className={`flex items-center gap-3 p-4 border-[3px] border-white/20 shadow-lg overflow-hidden relative ${className}`}
             style={{
                 ...style,
@@ -802,19 +873,34 @@ const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
                 backdropFilter: "blur(20px)"
             }}
         >
-            {/* Background Layer with Mask */}
-            <div
-                className="absolute inset-0 z-0 transition-all duration-500"
-                style={{
-                    background: isPlaying
-                        ? "repeating-linear-gradient(90deg, #a8edea, #fed6e3 25%, #a8edea 50%)"
-                        : "rgba(255, 255, 255, 0.8)",
-                    backgroundSize: isPlaying ? "200% 100%" : "auto",
-                    animation: isPlaying ? "wave-scroll 3s linear infinite" : "none",
-                    maskImage: isPlaying ? 'linear-gradient(to bottom, transparent 20%, black 100%)' : 'none',
-                    WebkitMaskImage: isPlaying ? 'linear-gradient(to bottom, transparent 20%, black 100%)' : 'none'
-                }}
-            />
+            {/* When playing: same mesh gradient shader as generating card (Paper 2B-0) */}
+            {isPlaying && (
+                <div className="absolute inset-0 z-0 overflow-hidden rounded-[inherit]" style={{ borderRadius: imageRadius }}>
+                    <div className="absolute rounded-[inherit] bg-white" style={{ top: -20, left: -20, right: -20, bottom: -20, borderRadius: imageRadius, filter: 'blur(20px) contrast(110%)' }}>
+                        <PaperMeshGradient
+                            width={size.w + 80}
+                            height={size.h + 80}
+                            fit="cover"
+                            colors={['#C5DBFF', '#FBFDF3', '#FFBD7B', '#FFFFFF', '#FF70D9', '#F1F4FF', '#FF70D9']}
+                            distortion={0.12 + audioReactiveLevel * 0.08}
+                            swirl={1}
+                            grainMixer={0.31}
+                            grainOverlay={0.12}
+                            speed={1.5 + audioReactiveLevel * 0.8}
+                            scale={1.44 + audioReactiveLevel * 0.18}
+                        />
+                    </div>
+                </div>
+            )}
+            {/* When paused: plain background */}
+            {!isPlaying && (
+                <div
+                    className="absolute inset-0 z-0 transition-all duration-500"
+                    style={{
+                        background: "rgba(255, 255, 255, 0.8)",
+                    }}
+                />
+            )}
 
             <audio ref={audioRef} src={src} onEnded={() => setIsPlaying(false)} />
 
@@ -825,14 +911,36 @@ const AudioPlayer = ({ src, fileName, style, className, imageRadius }: any) => {
                 {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-1" />}
             </button>
 
-            <div className="flex-1 min-w-0 flex flex-col justify-center relative z-10">
-                <div className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${isPlaying ? 'text-gray-600' : 'text-gray-400'}`}>Audio</div>
-                <div className="text-sm font-medium text-gray-800 truncate w-full" title={fileName}>{fileName || "Unknown Track"}</div>
-            </div>
+            {/* Volume control: visible when playing and hovered */}
+            {isPlaying && isHovered && (
+                <div className="flex items-center gap-2 flex-shrink-0 z-20 min-w-0 flex-1 max-w-[200px]" onClick={(e) => e.stopPropagation()}>
+                    <Volume2 size={14} className="text-gray-600 flex-shrink-0" />
+                    <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={volume}
+                        onChange={(e) => setVolume(Number(e.target.value))}
+                        className="mood-slider flex-1 min-w-[120px] w-full h-1.5 cursor-pointer"
+                    />
+                </div>
+            )}
 
-            <div className={`w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 relative z-10 transition-colors ${isPlaying ? 'bg-white/50 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
-                <Music size={16} className={isPlaying ? "icon-dance" : ""} />
-            </div>
+            {/* Label + file name: hidden when hovered */}
+            {!isHovered && (
+                <div className="flex-1 min-w-0 flex flex-col justify-center relative z-10">
+                    <div className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${isPlaying ? 'text-gray-600' : 'text-gray-400'}`}>Audio</div>
+                    <div className="text-sm font-medium text-gray-800 truncate w-full" title={fileName}>{fileName || "Unknown Track"}</div>
+                </div>
+            )}
+
+            {/* Music icon: hidden when hovered */}
+            {!isHovered && (
+                <div className={`w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 relative z-10 transition-colors ${isPlaying ? 'bg-white/50 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
+                    <Music size={16} className={isPlaying ? "icon-dance" : ""} />
+                </div>
+            )}
         </div>
     );
 };
@@ -2169,21 +2277,31 @@ const OrganicMoodboard = () => {
         setIsProcessing(true);
         setProgress(0);
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
             const element = document.getElementById('moodboard-canvas');
             if (!element) throw new Error("Canvas not found");
 
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
             const width = element.offsetWidth;
-            const scale = Math.min(2, 1200 / width);
+            const scale = Math.min(4, Math.max(2, 2400 / width));
 
             const canvas = await html2canvas(element, {
                 scale,
                 useCORS: true,
                 allowTaint: true,
                 backgroundColor: bgMode === 'solid' ? background : '#FFFFFF',
-                logging: false
+                logging: false,
+                ignoreElements: (el) => {
+                    const id = el.id || '';
+                    if (id === 'dock-controls') return true;
+                    if (el.closest && el.closest('[data-export-exclude]')) return true;
+                    if (el.getAttribute?.('data-export-exclude') === 'true') return true;
+                    if (el.classList?.contains('fixed')) return true;
+                    return false;
+                }
             });
 
             const link = document.createElement('a');
@@ -3020,7 +3138,7 @@ const OrganicMoodboard = () => {
                                                                     item={item}
                                                                     isFlipped={flippedItems.has(item.id)}
                                                                     onToggleFlip={toggleFlip}
-                                                                    showBorders={showBorders}
+                                                                    showBorders={showBorders || isExporting}
                                                                     imageRadius={imageRadius}
                                                                     borderThickness={borderThickness}
                                                                     borderStyle={borderStyle}
@@ -3035,7 +3153,7 @@ const OrganicMoodboard = () => {
                                                                 file={item.content}
                                                                 width={600} // Fixed base width for aspect ratio calc
                                                                 height={600 * (item.aspectRatio || 1.33)} // Height derived from AR
-                                                                showBorders={showBorders}
+                                                                showBorders={showBorders || isExporting}
                                                                 borderThickness={borderThickness}
                                                                 borderStyle={borderStyle}
                                                                 borderColor={borderColor}
@@ -3102,7 +3220,7 @@ const OrganicMoodboard = () => {
                                             handleResizeStart={handleResizeStart}
                                             handleRotateStart={handleRotateStart}
                                             imageRadius={imageRadius}
-                                            showBorders={showBorders}
+                                            showBorders={showBorders || isExporting}
                                             borderThickness={borderThickness}
                                             borderStyle={borderStyle}
                                             borderColor={borderColor}
@@ -3133,7 +3251,7 @@ const OrganicMoodboard = () => {
 
                     {/* --- TOP RIGHT MENU / EXIT SLIDESHOW --- */}
                     {!isExporting && (
-                        <div className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2 pointer-events-none">
+                        <div data-export-exclude="true" className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2 pointer-events-none">
                             {/* Exit Slideshow Button */}
                             <AnimatePresence>
                                 {layoutMode === 'animate' && (
@@ -3382,6 +3500,7 @@ const OrganicMoodboard = () => {
                     {!isExporting && (
                         <div
                             id="dock-controls"
+                            data-export-exclude="true"
                             className="absolute left-1/2 -translate-x-1/2 z-[9999] flex flex-col items-center pointer-events-none"
                             style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
                         >

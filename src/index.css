@@ -16,3 +16,26 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* PDF flipbook: clearer page-turn feel and visible flip */
+.pdf-flip-book {
+  --flip-perspective: 1400px;
+}
+.pdf-flip-book .stf__block {
+  perspective: var(--flip-perspective) !important;
+  transform-style: preserve-3d;
+}
+.pdf-flip-book .stf__item {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.pdf-flip-book .stf__item.--soft {
+  transition: none;
+}
+.pdf-flip-book .stf__outerShadow,
+.pdf-flip-book .stf__innerShadow,
+.pdf-flip-book .stf__hardShadow,
+.pdf-flip-book .stf__hardInnerShadow {
+  pointer-events: none;
+}
