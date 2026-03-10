@@ -17,7 +17,7 @@ import ShuffleSimpleIcon from './assets/shuffle-simple.svg';
 import ShuffleSimpleBlackIcon from './assets/shuffle-simple-black.svg';
 import SlideshowIcon from './assets/slideshow.svg';
 import SlideshowBlackIcon from './assets/slideshow-black.svg';
-import MoodLogo from './assets/Logo.svg';
+const MoodLogo = "/mood-logo.svg";
 import { TourGuide } from './components/TourGuide';
 import { PDFFlipBook } from './components/PDFFlipBook'; // Import PDF component
 import { ShaderBackground } from './components/ShaderBackground'; // Import ShaderBackground
