@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { WebrtcProvider } from 'y-webrtc';
+import { WebsocketProvider } from 'y-websocket';
 import { nanoid } from 'nanoid';
 
 export type RealtimeStatus = 'connecting' | 'connected' | 'disconnected';
@@ -22,6 +22,8 @@ export interface RemotePresence extends PresenceState {
     clientId: number;
 }
 
+const DEFAULT_WEBSOCKET_URL = import.meta.env.VITE_YJS_WEBSOCKET_URL || 'wss://demos.yjs.dev';
+
 interface CreateCollaborationOptions<TItem, TSettings> {
     roomId: string;
     initialItems: TItem[];
@@ -39,7 +41,7 @@ const getRandomColor = () => colorPalette[Math.floor(Math.random() * colorPalett
 
 export class MoodboardCollaboration<TItem, TSettings extends Record<string, unknown>> {
     private readonly doc: Y.Doc;
-    private readonly provider: WebrtcProvider;
+    private readonly provider: WebsocketProvider;
     private readonly boardMap: Y.Map<unknown>;
     private readonly userId: string;
     private readonly presenceBase: Pick<PresenceState, 'userId' | 'displayName' | 'color'>;
@@ -51,7 +53,9 @@ export class MoodboardCollaboration<TItem, TSettings extends Record<string, unkn
 
     constructor(options: CreateCollaborationOptions<TItem, TSettings>) {
         this.doc = new Y.Doc();
-        this.provider = new WebrtcProvider(options.roomId, this.doc);
+        this.provider = new WebsocketProvider(DEFAULT_WEBSOCKET_URL, options.roomId, this.doc, {
+            connect: true
+        });
         this.boardMap = this.doc.getMap('board');
         this.userId = nanoid(10);
         this.presenceBase = {
@@ -87,8 +91,8 @@ export class MoodboardCollaboration<TItem, TSettings extends Record<string, unkn
         this.emitPresence();
     }
 
-    private readonly handleProviderStatus = ({ connected }: { connected: boolean }) => {
-        this.onStatusChange?.(connected ? 'connected' : 'disconnected');
+    private readonly handleProviderStatus = ({ status }: { status: RealtimeStatus }) => {
+        this.onStatusChange?.(status);
     };
 
     private readonly handleBoardUpdate = () => {

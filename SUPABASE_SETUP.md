@@ -47,4 +47,5 @@ Once done, "Save to Community" will save to the cloud, and everyone with the app
 
 - Multiplayer share links use URL params: `?room=<roomId>&token=<shareToken>`.
 - Room metadata is stored in the board `data` JSON under `collab`.
+- Realtime sync now uses Yjs websocket transport (`VITE_YJS_WEBSOCKET_URL`), defaulting to `wss://demos.yjs.dev`.
 - If you enable stricter security later, turn on RLS and require auth before allowing write access.
