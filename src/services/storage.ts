@@ -1,5 +1,6 @@
 import type { BoardItem } from '../OrganicMoodboard';
 import { supabase } from './supabase';
+import { nanoid } from 'nanoid';
 
 export interface SavedMoodboard {
     id: string;
@@ -8,6 +9,13 @@ export interface SavedMoodboard {
     thumbnail: string; // Base64 data URL
     timestamp: number;
     items: BoardItem[];
+    collab?: {
+        roomId: string;
+        shareToken: string;
+        access: 'public_edit_link';
+        createdAt: number;
+        expiresAt?: number;
+    };
     settings: {
         palette: string[];
         background: string;
@@ -33,16 +41,54 @@ const isSupabaseConfigured = () => {
     return import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
 };
 
+const readLocalBoards = (): SavedMoodboard[] => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return [];
+    try {
+        return JSON.parse(stored) as SavedMoodboard[];
+    } catch (error) {
+        console.error('Local parse error:', error);
+        return [];
+    }
+};
+
+const writeLocalBoards = (boards: SavedMoodboard[]) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(boards));
+};
+
+export const createCollabMetadata = () => ({
+    roomId: `room_${nanoid(12)}`,
+    shareToken: nanoid(24),
+    access: 'public_edit_link' as const,
+    createdAt: Date.now()
+});
+
+export const ensureCollabMetadata = (board: SavedMoodboard): SavedMoodboard => {
+    if (board.collab?.roomId && board.collab.shareToken) return board;
+    return {
+        ...board,
+        collab: createCollabMetadata()
+    };
+};
+
+export const buildShareUrl = (roomId: string, shareToken: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomId);
+    url.searchParams.set('token', shareToken);
+    return url.toString();
+};
+
 export const saveBoard = async (board: SavedMoodboard): Promise<void> => {
+    const withCollab = ensureCollabMetadata(board);
     if (isSupabaseConfigured()) {
         const { error } = await supabase
             .from('moodboards')
             .upsert({
-                id: board.id,
-                title: board.title,
-                author: board.author,
-                thumbnail: board.thumbnail,
-                data: board, // Store full object in jsonb column
+                id: withCollab.id,
+                title: withCollab.title,
+                author: withCollab.author,
+                thumbnail: withCollab.thumbnail,
+                data: withCollab, // Store full object in jsonb column
                 updated_at: new Date().toISOString()
             });
 
@@ -51,17 +97,15 @@ export const saveBoard = async (board: SavedMoodboard): Promise<void> => {
             throw error;
         }
     } else {
-        // Fallback to LocalStorage
         try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            const boards: SavedMoodboard[] = stored ? JSON.parse(stored) : [];
-            const index = boards.findIndex(b => b.id === board.id);
+            const boards = readLocalBoards();
+            const index = boards.findIndex(b => b.id === withCollab.id);
             if (index >= 0) {
-                boards[index] = board;
+                boards[index] = withCollab;
             } else {
-                boards.unshift(board);
+                boards.unshift(withCollab);
             }
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(boards));
+            writeLocalBoards(boards);
         } catch (e) {
             console.error("Local Save Error:", e);
             throw e;
@@ -81,21 +125,17 @@ export const getBoards = async (): Promise<SavedMoodboard[]> => {
             return [];
         }
 
-        // Map back to SavedMoodboard interface
-        // Assuming 'data' column holds the full object, but we also extracted title/author/thumb for easier querying if needed.
-        // If we stored the whole object in 'data', we should return that.
         return data.map((row: any) => {
-            // If row.data exists, use it, otherwise fallback (if we change schema)
-            const board = row.data as SavedMoodboard;
-            // Ensure ID matches
-            board.id = row.id;
-            return board;
+            const baseBoard = row.data as SavedMoodboard;
+            const board = {
+                ...baseBoard,
+                id: row.id
+            };
+            return ensureCollabMetadata(board);
         });
     } else {
-        // Fallback
         try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            return stored ? JSON.parse(stored) : [];
+            return readLocalBoards().map(ensureCollabMetadata);
         } catch (e) {
             console.error("Local Load Error:", e);
             return [];
@@ -106,6 +146,32 @@ export const getBoards = async (): Promise<SavedMoodboard[]> => {
 export const getBoard = async (id: string): Promise<SavedMoodboard | undefined> => {
     const boards = await getBoards();
     return boards.find(b => b.id === id);
+};
+
+export const getBoardByRoom = async (roomId: string): Promise<SavedMoodboard | undefined> => {
+    const boards = await getBoards();
+    return boards.find((board) => board.collab?.roomId === roomId || board.id === roomId);
+};
+
+export const getBoardByRoomAndToken = async (roomId: string, shareToken: string): Promise<SavedMoodboard | undefined> => {
+    const board = await getBoardByRoom(roomId);
+    if (!board) return undefined;
+    const tokenMatches = board.collab?.shareToken === shareToken;
+    if (!tokenMatches) return undefined;
+    if (board.collab?.expiresAt && Date.now() > board.collab.expiresAt) return undefined;
+    return board;
+};
+
+export const rotateBoardShareToken = async (board: SavedMoodboard): Promise<SavedMoodboard> => {
+    const updated: SavedMoodboard = {
+        ...board,
+        collab: {
+            ...(board.collab ?? createCollabMetadata()),
+            shareToken: nanoid(24)
+        }
+    };
+    await saveBoard(updated);
+    return updated;
 };
 
 export const deleteBoard = async (id: string): Promise<void> => {
@@ -120,12 +186,8 @@ export const deleteBoard = async (id: string): Promise<void> => {
             throw error;
         }
     } else {
-        // const boards = await getBoards(); // calling local getBoards
-        // Wait, getBoards returns array.
-        // We need to re-read local storage synchronously or just use the logic
-        const stored = localStorage.getItem(STORAGE_KEY);
-        const localBoards: SavedMoodboard[] = stored ? JSON.parse(stored) : [];
+        const localBoards = readLocalBoards();
         const newBoards = localBoards.filter(b => b.id !== id);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newBoards));
+        writeLocalBoards(newBoards);
     }
 };

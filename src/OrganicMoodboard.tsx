@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 // FIX: Added 'type' keyword before Variants to satisfy strict TS rules
 import { motion, AnimatePresence, usePresence, useMotionValue, useVelocity, useTransform, useSpring, animate } from 'framer-motion';
 import html2canvas from 'html2canvas';
@@ -6,7 +6,7 @@ import {
     Download, X, Plus, Type, SlidersHorizontal, Scaling,
     ChevronLeft, ChevronRight,
     Copy, Play, Pause, Loader, RotateCw, Music, FileImage,
-    Image as ImageIcon, Video, Volume2
+    Image as ImageIcon, Video, Volume2, Hand
 } from 'lucide-react';
 // Ensure this path matches where you put the file
 import { generateMoodImageFromBoard } from './services/imageGenerator';
@@ -23,6 +23,10 @@ import { PDFFlipBook } from './components/PDFFlipBook'; // Import PDF component
 import { ShaderBackground } from './components/ShaderBackground'; // Import ShaderBackground
 import { DissolveEffect } from './components/DissolveEffect'; // Import DissolveEffect
 import { MeshGradient as PaperMeshGradient } from '@paper-design/shaders-react';
+import HandGestureController from './components/HandGestureController'; // Import HandGestureController
+import { CollabCursorLayer } from './components/CollabCursorLayer';
+import { buildShareUrl, createCollabMetadata, ensureCollabMetadata, getBoardByRoomAndToken, saveBoard, type SavedMoodboard } from './services/storage';
+import { MoodboardCollaboration, type RealtimeStatus, type RemotePresence } from './services/collaboration/moodboardCollaboration';
 
 import { pdfjs } from 'react-pdf';
 
@@ -1621,9 +1625,58 @@ const DEFAULT_ITEMS: BoardItem[] = [
     }
 ];
 
-const OrganicMoodboard = () => {
+const MULTIPLAYER_ENABLED = import.meta.env.VITE_MULTIPLAYER_ENABLED !== 'false';
+const CURSOR_SYNC_INTERVAL_MS = 40;
+const SNAPSHOT_DEBOUNCE_MS = 2000;
+const OPERATION_RATE_WINDOW_MS = 1000;
+const MAX_OPERATIONS_PER_WINDOW = 120;
+
+interface OrganicMoodboardProps {
+    sharedRoomId?: string | null;
+    shareToken?: string | null;
+}
+
+type CollaborationSettings = SavedMoodboard['settings'] & {
+    title: string;
+};
+
+const OrganicMoodboard: React.FC<OrganicMoodboardProps> = ({ sharedRoomId, shareToken }) => {
     // --- State ---
-    const [items, setItems] = useState<BoardItem[]>([...DEFAULT_ITEMS]);
+    const [items, setItemsState] = useState<BoardItem[]>([...DEFAULT_ITEMS]);
+    const [collabRoom, setCollabRoom] = useState<{ roomId: string; shareToken: string } | null>(null);
+    const [collabStatus, setCollabStatus] = useState<RealtimeStatus>('disconnected');
+    const [remoteUsers, setRemoteUsers] = useState<RemotePresence[]>([]);
+    const [localCollabUserId, setLocalCollabUserId] = useState<string | null>(null);
+    const [shareUrl, setShareUrl] = useState('');
+    const [displayName, setDisplayName] = useState(() => localStorage.getItem('mood_display_name') || `Guest-${Math.random().toString(36).slice(2, 6)}`);
+    const collaborationRef = useRef<MoodboardCollaboration<BoardItem, CollaborationSettings> | null>(null);
+    const isApplyingRemoteRef = useRef(false);
+    const isApplyingRemoteSettingsRef = useRef(false);
+    const cursorSyncRef = useRef(0);
+    const snapshotTimerRef = useRef<number | null>(null);
+    const opWindowRef = useRef({ startedAt: Date.now(), count: 0 });
+
+    const canBroadcastMutation = useCallback(() => {
+        const now = Date.now();
+        if (now - opWindowRef.current.startedAt > OPERATION_RATE_WINDOW_MS) {
+            opWindowRef.current.startedAt = now;
+            opWindowRef.current.count = 0;
+        }
+        opWindowRef.current.count += 1;
+        return opWindowRef.current.count <= MAX_OPERATIONS_PER_WINDOW;
+    }, []);
+
+    const setItems = useCallback((value: BoardItem[] | ((prev: BoardItem[]) => BoardItem[])) => {
+        setItemsState((prev) => {
+            const next = typeof value === 'function'
+                ? (value as (prev: BoardItem[]) => BoardItem[])(prev)
+                : value;
+            if (!isApplyingRemoteRef.current && collaborationRef.current && canBroadcastMutation()) {
+                collaborationRef.current.setItems(next);
+            }
+            return next;
+        });
+    }, [canBroadcastMutation]);
 
     // DEBUG: Check items on mount
     useEffect(() => {
@@ -1708,12 +1761,19 @@ const OrganicMoodboard = () => {
     const [isShaderMode, setIsShaderMode] = useState(true); // Default to True for shader mode
     const [activeShaderColors, setActiveShaderColors] = useState<string[]>([]); // New state for reactive borders
     const [enableMotionBlur, setEnableMotionBlur] = useState(false); // New state for motion blur
-    const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.5); // New state for motion blur intensity
+    const [motionBlurIntensity] = useState(0.5); // New state for motion blur intensity
     const [shaderMode, setShaderMode] = useState<'soft' | 'extreme'>('soft'); // New state for shader mode
     const [shaderItemId, setShaderItemId] = useState<string | null>(null); // Track specific item for shader background
 
     // Sidebar
     const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
+
+    // Hand Gesture Control
+    const [isHandGestureActive, setIsHandGestureActive] = useState(false);
+    const [palmPosition, setPalmPosition] = useState<{ x: number; y: number } | undefined>(undefined);
+    const [palmVelocity, setPalmVelocity] = useState(0);
+    const [isPalmActive, setIsPalmActive] = useState(false);
+
 
     // Content State
     const [title, setTitle] = useState("");
@@ -1725,16 +1785,270 @@ const OrganicMoodboard = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    useEffect(() => {
+        localStorage.setItem('mood_display_name', displayName);
+    }, [displayName]);
+
+    useEffect(() => {
+        if (!MULTIPLAYER_ENABLED) return;
+        let cancelled = false;
+        const initializeRoom = async () => {
+            if (sharedRoomId && shareToken) {
+                const sharedBoard = await getBoardByRoomAndToken(sharedRoomId, shareToken);
+                if (cancelled) return;
+                if (sharedBoard) {
+                    const hydrated = ensureCollabMetadata(sharedBoard);
+                    setItemsState(hydrated.items);
+                    setTitle(hydrated.title || '');
+                    setPalette(hydrated.settings.palette);
+                    setBackground(hydrated.settings.background);
+                    setBgMode(hydrated.settings.bgMode);
+                    setShaderMode(hydrated.settings.shaderMode);
+                    setLayoutMode(hydrated.settings.layoutMode);
+                    setImageRadius(hydrated.settings.imageRadius);
+                    setBorderThickness(hydrated.settings.borderThickness);
+                    setShowBorders(hydrated.settings.showBorders);
+                    setShowGrid(hydrated.settings.showGrid);
+                    setGridType(hydrated.settings.gridType);
+                    setQuoteSize(hydrated.settings.quoteSize);
+                    setEnableMotionBlur(hydrated.settings.enableMotionBlur);
+                    setShaderItemId(hydrated.settings.shaderItemId);
+                    setCollabRoom({
+                        roomId: hydrated.collab!.roomId,
+                        shareToken: hydrated.collab!.shareToken
+                    });
+                    setGlobalZIndex(Math.max(10, ...hydrated.items.map((item) => item.zIndex), 10));
+                } else {
+                    setCollabRoom({ roomId: sharedRoomId, shareToken });
+                }
+                return;
+            }
+
+            const localRoomRaw = localStorage.getItem('mood_collab_room_v1');
+            if (localRoomRaw) {
+                try {
+                    const parsed = JSON.parse(localRoomRaw) as { roomId: string; shareToken: string };
+                    if (parsed.roomId && parsed.shareToken) {
+                        setCollabRoom(parsed);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn('Invalid local room cache, creating a new room.', error);
+                }
+            }
+
+            const metadata = createCollabMetadata();
+            const nextRoom = { roomId: metadata.roomId, shareToken: metadata.shareToken };
+            localStorage.setItem('mood_collab_room_v1', JSON.stringify(nextRoom));
+            setCollabRoom(nextRoom);
+        };
+        initializeRoom();
+        return () => {
+            cancelled = true;
+        };
+    }, [sharedRoomId, shareToken]);
+
+    useEffect(() => {
+        if (!collabRoom) return;
+        setShareUrl(buildShareUrl(collabRoom.roomId, collabRoom.shareToken));
+    }, [collabRoom]);
+
+    const buildCollaborationSettings = useCallback((): CollaborationSettings => ({
+        palette,
+        background,
+        bgMode,
+        shaderMode,
+        layoutMode,
+        imageRadius,
+        borderThickness,
+        showBorders,
+        showGrid,
+        gridType,
+        quoteSize,
+        enableMotionBlur,
+        motionBlurIntensity,
+        shaderItemId,
+        title
+    }), [
+        palette,
+        background,
+        bgMode,
+        shaderMode,
+        layoutMode,
+        imageRadius,
+        borderThickness,
+        showBorders,
+        showGrid,
+        gridType,
+        quoteSize,
+        enableMotionBlur,
+        motionBlurIntensity,
+        shaderItemId,
+        title
+    ]);
+
+    useEffect(() => {
+        if (!MULTIPLAYER_ENABLED || !collabRoom) return;
+        const collaboration = new MoodboardCollaboration<BoardItem, CollaborationSettings>({
+            roomId: collabRoom.roomId,
+            initialItems: items,
+            initialSettings: buildCollaborationSettings(),
+            displayName,
+            onItemsChange: (incomingItems) => {
+                isApplyingRemoteRef.current = true;
+                setItemsState(incomingItems);
+                isApplyingRemoteRef.current = false;
+                setGlobalZIndex(Math.max(10, ...incomingItems.map((item) => item.zIndex), 10));
+            },
+            onSettingsChange: (incomingSettings) => {
+                isApplyingRemoteSettingsRef.current = true;
+                if (incomingSettings.palette) setPalette(incomingSettings.palette);
+                if (incomingSettings.background) setBackground(incomingSettings.background);
+                if (incomingSettings.bgMode) setBgMode(incomingSettings.bgMode);
+                if (incomingSettings.shaderMode) setShaderMode(incomingSettings.shaderMode);
+                if (incomingSettings.layoutMode) setLayoutMode(incomingSettings.layoutMode);
+                if (incomingSettings.imageRadius !== undefined) setImageRadius(incomingSettings.imageRadius);
+                if (incomingSettings.borderThickness !== undefined) setBorderThickness(incomingSettings.borderThickness);
+                if (incomingSettings.showBorders !== undefined) setShowBorders(incomingSettings.showBorders);
+                if (incomingSettings.showGrid !== undefined) setShowGrid(incomingSettings.showGrid);
+                if (incomingSettings.gridType) setGridType(incomingSettings.gridType);
+                if (incomingSettings.quoteSize !== undefined) setQuoteSize(incomingSettings.quoteSize);
+                if (incomingSettings.enableMotionBlur !== undefined) setEnableMotionBlur(incomingSettings.enableMotionBlur);
+                if (incomingSettings.shaderItemId !== undefined) setShaderItemId(incomingSettings.shaderItemId);
+                if (incomingSettings.title !== undefined) setTitle(incomingSettings.title);
+                window.setTimeout(() => {
+                    isApplyingRemoteSettingsRef.current = false;
+                }, 0);
+            },
+            onPresenceChange: setRemoteUsers,
+            onStatusChange: setCollabStatus
+        });
+
+        collaborationRef.current = collaboration;
+        setLocalCollabUserId(collaboration.getLocalUserId());
+
+        return () => {
+            collaboration.destroy();
+            collaborationRef.current = null;
+            setRemoteUsers([]);
+            setLocalCollabUserId(null);
+            setCollabStatus('disconnected');
+        };
+    }, [collabRoom?.roomId]);
+
+    useEffect(() => {
+        if (!collaborationRef.current) return;
+        collaborationRef.current.setDisplayName(displayName);
+    }, [displayName]);
+
+    useEffect(() => {
+        if (!collaborationRef.current || isApplyingRemoteSettingsRef.current) return;
+        collaborationRef.current.setSettings(buildCollaborationSettings());
+    }, [buildCollaborationSettings]);
+
+    useEffect(() => {
+        if (!containerRef.current || !collaborationRef.current) return;
+        const target = containerRef.current;
+        const onPointerMove = (event: PointerEvent) => {
+            if (!target) return;
+            const now = Date.now();
+            if (now - cursorSyncRef.current < CURSOR_SYNC_INTERVAL_MS) return;
+            cursorSyncRef.current = now;
+            const rect = target.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 100;
+            const y = ((event.clientY - rect.top) / rect.height) * 100;
+            if (x < 0 || x > 100 || y < 0 || y > 100) return;
+            collaborationRef.current?.setCursor({ x, y });
+        };
+        const onPointerLeave = () => {
+            collaborationRef.current?.setCursor(null);
+        };
+        target.addEventListener('pointermove', onPointerMove);
+        target.addEventListener('pointerleave', onPointerLeave);
+        return () => {
+            target.removeEventListener('pointermove', onPointerMove);
+            target.removeEventListener('pointerleave', onPointerLeave);
+        };
+    }, [collabRoom]);
+
+    useEffect(() => {
+        if (!collabRoom) return;
+        if (snapshotTimerRef.current) {
+            window.clearTimeout(snapshotTimerRef.current);
+        }
+        snapshotTimerRef.current = window.setTimeout(() => {
+            const board: SavedMoodboard = ensureCollabMetadata({
+                id: collabRoom.roomId,
+                title: title || 'Untitled Board',
+                author: displayName,
+                thumbnail: '',
+                timestamp: Date.now(),
+                items,
+                collab: {
+                    roomId: collabRoom.roomId,
+                    shareToken: collabRoom.shareToken,
+                    access: 'public_edit_link',
+                    createdAt: Date.now()
+                },
+                settings: {
+                    palette,
+                    background,
+                    bgMode,
+                    shaderMode,
+                    layoutMode,
+                    imageRadius,
+                    borderThickness,
+                    showBorders,
+                    showGrid,
+                    gridType,
+                    quoteSize,
+                    enableMotionBlur,
+                    motionBlurIntensity,
+                    shaderItemId
+                }
+            });
+            saveBoard(board).catch((error) => {
+                console.error('Snapshot persistence failed:', error);
+            });
+        }, SNAPSHOT_DEBOUNCE_MS);
+
+        return () => {
+            if (snapshotTimerRef.current) {
+                window.clearTimeout(snapshotTimerRef.current);
+            }
+        };
+    }, [
+        collabRoom,
+        items,
+        title,
+        displayName,
+        palette,
+        background,
+        bgMode,
+        shaderMode,
+        layoutMode,
+        imageRadius,
+        borderThickness,
+        showBorders,
+        showGrid,
+        gridType,
+        quoteSize,
+        enableMotionBlur,
+        motionBlurIntensity,
+        shaderItemId
+    ]);
+
     // --- AUTO-PLAY FOR SHOW MODE ---
     useEffect(() => {
         let interval: any;
-        if (layoutMode === 'animate' && !isPaused && items.length > 0) {
+        // Pause auto-play when palm is active (interacting with shader)
+        if (layoutMode === 'animate' && !isPaused && !isPalmActive && items.length > 0) {
             interval = setInterval(() => {
                 setActiveIndex((prev) => (prev + 1) % items.length);
             }, 6000); // Updated to 6 seconds for Shader Mode
         }
         return () => clearInterval(interval);
-    }, [layoutMode, isPaused, items.length]);
+    }, [layoutMode, isPaused, isPalmActive, items.length]);
 
     // --- PASTE HANDLER ---
     useEffect(() => {
@@ -2565,10 +2879,119 @@ const OrganicMoodboard = () => {
         setCurrentFontIndex((prev) => (prev + 1) % FONTS.length);
     };
 
+    // Hand Gesture State for pinch-to-drag
+    const [handDraggedItemId, setHandDraggedItemId] = useState<string | null>(null);
+    const [handCursorPos, setHandCursorPos] = useState<{ x: number; y: number } | null>(null);
+
+    const handlePinchStart = (x: number, y: number) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const screenX = (1 - x) * rect.width;
+        const screenY = y * rect.height;
+
+        // Hit-test: find the topmost item under the cursor
+        let closestItem: BoardItem | null = null;
+        let highestZ = -1;
+        for (const item of items) {
+            const itemLeft = (item.x / 100) * rect.width;
+            const itemTop = (item.y / 100) * rect.height;
+            const itemW = item.width;
+            const itemH = item.height || item.width / (item.aspectRatio || 1);
+
+            if (
+                screenX >= itemLeft &&
+                screenX <= itemLeft + itemW &&
+                screenY >= itemTop &&
+                screenY <= itemTop + itemH &&
+                item.zIndex > highestZ
+            ) {
+                closestItem = item;
+                highestZ = item.zIndex;
+            }
+        }
+
+        if (closestItem) {
+            setHandDraggedItemId(closestItem.id);
+            bringToFront(closestItem.id);
+        }
+    };
+
+    const handlePinchMove = (x: number, y: number) => {
+        if (!containerRef.current || !handDraggedItemId) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const screenX = (1 - x) * rect.width;
+        const screenY = y * rect.height;
+        const newXPercent = (screenX / rect.width) * 100;
+        const newYPercent = (screenY / rect.height) * 100;
+
+        setItems(prev => prev.map(item =>
+            item.id === handDraggedItemId
+                ? { ...item, x: newXPercent, y: newYPercent }
+                : item
+        ));
+    };
+
+    const handlePinchRelease = (_x: number, _y: number) => {
+        setHandDraggedItemId(null);
+    };
+
+    const handleClearWipe = () => {
+        setItems([]);
+    };
+
+    const handleHandMove = (x: number, y: number) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        setHandCursorPos({ x: (1 - x) * rect.width, y: y * rect.height });
+    };
+
+    const handlePinchSwipeUp = (velocity: number) => {
+        if (layoutMode === 'animate' && items.length > 0) {
+            const skip = velocity > 2 ? Math.ceil(velocity) : 1;
+            setActiveIndex(prev => (prev + skip) % items.length);
+        }
+    };
+
+    const handlePinchSwipeDown = (velocity: number) => {
+        if (layoutMode === 'animate' && items.length > 0) {
+            const skip = velocity > 2 ? Math.ceil(velocity) : 1;
+            setActiveIndex(prev => (prev - skip + items.length) % items.length);
+        }
+    };
+
+    const handlePalmWave = (x: number, y: number, velocity: number) => {
+        setPalmPosition({ x, y });
+        setPalmVelocity(velocity);
+
+        if (velocity > 0.05) {
+            setIsPalmActive(true);
+            setTimeout(() => setIsPalmActive(false), 300);
+        }
+    };
+
+    const toggleHandGesture = () => {
+        setIsHandGestureActive(prev => !prev);
+    };
+
+    const applyItemCommand = useCallback((updater: (current: BoardItem[]) => BoardItem[]) => {
+        setItems((current) => updater(current));
+    }, [setItems]);
+
+    const copyShareLink = async () => {
+        if (!shareUrl) return;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            alert('Share link copied.');
+        } catch (error) {
+            console.error('Failed to copy share URL', error);
+        }
+    };
+
     const bringToFront = (id: string) => {
+        collaborationRef.current?.setSelectedItems([id]);
         setGlobalZIndex(prev => {
             const newZ = prev + 1;
-            setItems(items.map(item => item.id === id ? { ...item, zIndex: newZ } : item));
+            applyItemCommand((currentItems) => currentItems.map(item => item.id === id ? { ...item, zIndex: newZ } : item));
             return newZ;
         });
     };
@@ -2577,6 +3000,7 @@ const OrganicMoodboard = () => {
         const updated = items.filter(i => i.id !== id);
         setItems(updated);
         if (layoutMode === 'grid') reLayoutGrid(updated);
+        collaborationRef.current?.setSelectedItems([]);
     };
 
     const handleRotateStart = (e: React.PointerEvent, id: string, initialRotation: number) => {
@@ -2714,6 +3138,27 @@ const OrganicMoodboard = () => {
             </AnimatePresence>
 
             <Styles />
+            {MULTIPLAYER_ENABLED && collabRoom && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[10000] pointer-events-none">
+                    <div className="pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-[12px] bg-white/90 backdrop-blur-md border border-[#e1e1e1] shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+                        <div className={`w-2.5 h-2.5 rounded-full ${collabStatus === 'connected' ? 'bg-green-500' : collabStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                        <span className="text-[12px] text-[#333]">{remoteUsers.length} online</span>
+                        <input
+                            value={displayName}
+                            onChange={(event) => setDisplayName(event.target.value)}
+                            maxLength={24}
+                            className="w-[120px] text-[12px] px-2 py-1 rounded-[8px] border border-[#e1e1e1] bg-white text-[#1e1e1e] outline-none"
+                            placeholder="Your name"
+                        />
+                        <button
+                            onClick={copyShareLink}
+                            className="text-[12px] px-2 py-1 rounded-[8px] bg-[#2a2a2a] text-white hover:bg-black transition-colors"
+                        >
+                            Copy Link
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div ref={exportWrapperRef} className={`w-full h-full flex items-center justify-center ${layoutMode === 'animate' ? 'p-0' : 'p-0 md:p-12'}`}>
                 {isProcessing && <LoadingOverlay message="Capturing moodboard..." progress={progress} />}
@@ -2780,7 +3225,7 @@ const OrganicMoodboard = () => {
                         {isLoading && <LoadingCards />}
                     </AnimatePresence>
 
-                    {!isExporting && !isSidebarOpen && (
+                    {!isExporting && !isSidebarOpen && !isHandGestureActive && (
                         <button
                             id="sidebar-toggle"
                             onClick={() => setIsSidebarOpen(true)}
@@ -2791,7 +3236,7 @@ const OrganicMoodboard = () => {
                     )}
 
                     <AnimatePresence initial={false}>
-                        {isSidebarOpen && (
+                        {isSidebarOpen && !isHandGestureActive && (
                             <motion.div
                                 initial={{ x: -290, opacity: 0 }}
                                 animate={{ x: 0, opacity: 1 }}
@@ -2979,11 +3424,14 @@ const OrganicMoodboard = () => {
                                     motionBlurIntensity={motionBlurIntensity}
                                     isPaused={isPaused}
                                     shaderMode={shaderMode}
+                                    palmPosition={palmPosition}
+                                    palmVelocity={palmVelocity}
                                 />
                             </div>
                         )}
 
                         <div id="moodboard-canvas" ref={containerRef} className={`w-full h-full relative scroll-smooth custom-scrollbar ${layoutMode === 'grid' ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'} z-10`} style={{ perspective: '1200px' }}>
+                            <CollabCursorLayer users={remoteUsers} localUserId={localCollabUserId} />
                             {/* Scroll Spacer for Grid Mode */}
                             {layoutMode === 'grid' && (
                                 <div style={{
@@ -3250,9 +3698,8 @@ const OrganicMoodboard = () => {
 
 
                     {/* --- TOP RIGHT MENU / EXIT SLIDESHOW --- */}
-                    {!isExporting && (
+                    {!isExporting && !isHandGestureActive && (
                         <div data-export-exclude="true" className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2 pointer-events-none">
-                            {/* Exit Slideshow Button */}
                             <AnimatePresence>
                                 {layoutMode === 'animate' && (
                                     <motion.div
@@ -3278,8 +3725,27 @@ const OrganicMoodboard = () => {
                         </div>
                     )}
 
+                    {/* --- HAND CONTROL FULLSCREEN EXIT --- */}
+                    {isHandGestureActive && (
+                        <motion.div
+                            data-export-exclude="true"
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="absolute top-4 right-4 z-[9999] pointer-events-auto"
+                        >
+                            <button
+                                onClick={() => setIsHandGestureActive(false)}
+                                className="flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-md border border-[#e1e1e1] rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] hover:bg-white text-black transition-all group"
+                            >
+                                <X size={16} className="text-[#525252] group-hover:text-black transition-colors" strokeWidth={2} />
+                                <span className="text-[14px] font-medium leading-[21px]">Exit Hand Control</span>
+                            </button>
+                        </motion.div>
+                    )}
+
                     {/* --- STYLE SETTINGS PANEL --- */}
-                    {!isExporting && (
+                    {!isExporting && !isHandGestureActive && (
                         <AnimatePresence>
                             {showSettings && (
                                 <motion.div
@@ -3497,7 +3963,7 @@ const OrganicMoodboard = () => {
                     )}
 
                     {/* --- BOTTOM DOCK (Figma 79:300) --- */}
-                    {!isExporting && (
+                    {!isExporting && !isHandGestureActive && (
                         <div
                             id="dock-controls"
                             data-export-exclude="true"
@@ -3517,6 +3983,12 @@ const OrganicMoodboard = () => {
                                     isGenerating={isGeneratingAI}
                                 />
                                 <BottomDockButton onClick={handleShuffle} iconSrc={ShuffleSimpleIcon} iconSrcHover={ShuffleSimpleBlackIcon} label="Shuffle" />
+                                <BottomDockButton
+                                    onClick={copyShareLink}
+                                    icon={Copy}
+                                    label="Share"
+                                    active={Boolean(shareUrl)}
+                                />
                                 <BottomDockButton
                                     id="tour-style"
                                     onClick={() => setShowSettings(!showSettings)}
@@ -3541,11 +4013,61 @@ const OrganicMoodboard = () => {
                                     roundedClass="rounded-[8px]"
                                     active={layoutMode === 'animate' && viewMode === 'editor'}
                                 />
+                                <BottomDockButton
+                                    onClick={toggleHandGesture}
+                                    icon={Hand}
+                                    label="Hand Control"
+                                    active={isHandGestureActive}
+                                />
                             </div>
                         </div>
                     )}
                 </div>
             </div >
+            <HandGestureController
+                isActive={isHandGestureActive}
+                onPinchStart={handlePinchStart}
+                onPinchMove={handlePinchMove}
+                onPinchRelease={handlePinchRelease}
+                onPinchSwipeUp={handlePinchSwipeUp}
+                onPinchSwipeDown={handlePinchSwipeDown}
+                onClearWipe={handleClearWipe}
+                onPalmWave={handlePalmWave}
+                onHandMove={handleHandMove}
+                onClose={() => setIsHandGestureActive(false)}
+            />
+
+            {/* Hand cursor visual feedback */}
+            {isHandGestureActive && handCursorPos && (
+                <motion.div
+                    className="fixed pointer-events-none z-[9999]"
+                    style={{
+                        left: handCursorPos.x,
+                        top: handCursorPos.y,
+                        transform: 'translate(-50%, -50%)',
+                    }}
+                    animate={{
+                        scale: handDraggedItemId ? 1.3 : 1,
+                    }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                >
+                    <div
+                        className="rounded-full"
+                        style={{
+                            width: handDraggedItemId ? 28 : 20,
+                            height: handDraggedItemId ? 28 : 20,
+                            background: handDraggedItemId
+                                ? 'rgba(34, 197, 94, 0.7)'
+                                : 'rgba(255, 255, 255, 0.6)',
+                            border: `2px solid ${handDraggedItemId ? 'rgba(34, 197, 94, 1)' : 'rgba(255, 255, 255, 0.9)'}`,
+                            boxShadow: handDraggedItemId
+                                ? '0 0 20px rgba(34, 197, 94, 0.6)'
+                                : '0 0 12px rgba(255, 255, 255, 0.4)',
+                        }}
+                    />
+                </motion.div>
+            )}
+
             <TourGuide onStepChange={handleTourStepChange} onComplete={() => setHasSeenTour(true)} />
         </div >
     );

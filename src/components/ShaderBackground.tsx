@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-
 interface ShaderBackgroundProps {
     imageUrl?: string;
     isActive: boolean;
@@ -10,6 +9,8 @@ interface ShaderBackgroundProps {
     motionBlurIntensity?: number;
     isPaused?: boolean;
     shaderMode?: 'soft' | 'extreme';
+    palmPosition?: { x: number; y: number };
+    palmVelocity?: number;
 }
 
 export const ShaderBackground: React.FC<ShaderBackgroundProps> = ({
@@ -20,16 +21,20 @@ export const ShaderBackground: React.FC<ShaderBackgroundProps> = ({
     enableMotionBlur = false,
     motionBlurIntensity = 0.5,
     isPaused = false,
-    shaderMode = 'soft'
+    shaderMode = 'soft',
+    palmPosition,
+    palmVelocity = 0
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    // Refs for Motion Blur, Pause, and Mode to access in render loop
+    // Refs for Motion Blur, Pause, Mode, and Palm to access in render loop
     const propsRef = useRef({
         motionBlur: enableMotionBlur,
         blurIntensity: motionBlurIntensity,
         paused: isPaused,
-        mode: shaderMode
+        mode: shaderMode,
+        palmPosition: palmPosition,
+        palmVelocity: palmVelocity
     });
 
     useEffect(() => {
@@ -37,9 +42,11 @@ export const ShaderBackground: React.FC<ShaderBackgroundProps> = ({
             motionBlur: enableMotionBlur,
             blurIntensity: motionBlurIntensity,
             paused: isPaused,
-            mode: shaderMode
+            mode: shaderMode,
+            palmPosition: palmPosition,
+            palmVelocity: palmVelocity
         };
-    }, [enableMotionBlur, motionBlurIntensity, isPaused, shaderMode]);
+    }, [enableMotionBlur, motionBlurIntensity, isPaused, shaderMode, palmPosition, palmVelocity]);
 
     // Color State
     const [colors, setColors] = useState<number[][]>([
@@ -77,6 +84,20 @@ export const ShaderBackground: React.FC<ShaderBackgroundProps> = ({
 
     // Ref for Mode Transition (0 = soft, 1 = extreme)
     const currentModeRef = useRef<number>(shaderMode === 'extreme' ? 1.0 : 0.0);
+
+    // Refs for smooth palm transitions
+    const currentPalmPosRef = useRef<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+    const currentPalmVelRef = useRef<number>(0);
+    const currentPalmActiveRef = useRef<number>(0);
+    const currentPalmDirRef = useRef<{ x: number; y: number }>({ x: 1, y: 0 });
+
+    // Reset palm wave effect when image changes
+    useEffect(() => {
+        currentPalmPosRef.current = { x: 0.5, y: 0.5 };
+        currentPalmVelRef.current = 0;
+        currentPalmActiveRef.current = 0;
+        currentPalmDirRef.current = { x: 1, y: 0 };
+    }, [imageUrl]);
 
     // 1. Color Extraction Logic
     useEffect(() => {
@@ -284,7 +305,7 @@ void main() {
             uniform vec2 u_resolution;
             uniform float u_time;
             uniform vec3 u_colors[5];
-            
+
             uniform sampler2D u_image0;
             uniform sampler2D u_image1;
             uniform float u_imgMix;
@@ -292,7 +313,13 @@ void main() {
             uniform float u_motionBlur;
             uniform float u_blurIntensity;
             uniform float u_shaderMode; // 0.0 = soft, 1.0 = extreme
-            
+
+            // Palm control uniforms
+            uniform vec2 u_palmPosition; // Current palm position (0-1 normalized)
+            uniform float u_palmVelocity; // Palm movement velocity
+            uniform float u_palmActive; // 1.0 when palm is active, 0.0 otherwise
+            uniform vec2 u_palmDirection; // Direction of palm movement (normalized)
+
             varying vec2 vUv;
 
             // Simplex noise
@@ -364,21 +391,59 @@ void main() {
 
             void main() {
                 vec2 uv = gl_FragCoord.xy / u_resolution.xy;
-                
+
+                // --- PALM-CONTROLLED WATER WAVES (GLOBAL) ---
+                vec2 palmInfluence = vec2(0.0);
+                float palmWaveBoost = 0.0;
+
+                if (u_palmActive > 0.1) {
+                    // Vector from UV to palm position
+                    vec2 toPalm = uv - u_palmPosition;
+                    float distToPalm = length(toPalm);
+
+                    // Create wave perpendicular to movement direction
+                    // Project position onto palm direction to get wave phase
+                    float wavePhase = dot(toPalm, u_palmDirection);
+
+                    // Create traveling sine wave
+                    float waveFrequency = 8.0; // Number of waves
+                    float waveSpeed = u_time * 3.0; // Wave animation over time
+                    float wave = sin(wavePhase * waveFrequency - waveSpeed);
+
+                    // Amplitude decreases with distance from palm
+                    float falloff = smoothstep(0.6, 0.0, distToPalm);
+
+                    // Perpendicular direction to palm movement (for water wave displacement)
+                    vec2 perpDir = vec2(-u_palmDirection.y, u_palmDirection.x);
+
+                    // Create wave displacement perpendicular to movement
+                    float waveStrength = u_palmVelocity * 0.3 * falloff * u_palmActive;
+                    palmInfluence = perpDir * wave * waveStrength;
+
+                    // Also add some displacement along movement direction
+                    palmInfluence += u_palmDirection * wave * waveStrength * 0.5;
+
+                    // Boost overall wave effect
+                    palmWaveBoost = abs(wave) * waveStrength * 2.0;
+                }
+
+                // Apply palm distortion to UV coordinates
+                vec2 palmUV = uv + palmInfluence;
+
                 // --- MODE ADJUSTMENTS ---
                 // --- MODE ADJUSTMENTS ---
                 float speedMult = mix(0.05, 0.25, u_shaderMode); // Much faster in extreme mode
                 float time = u_time * speedMult;
-                
-                float waveAmp = mix(0.1, 0.4, u_shaderMode); // Stronger distortion
+
+                float waveAmp = mix(0.1, 0.4, u_shaderMode) + palmWaveBoost; // Stronger distortion + palm boost
                 // Soft: Balanced frequency. Extreme: Stretched horizontally (low Y freq, high X freq)
-                vec2 waveFreq = mix(vec2(1.5, 1.5), vec2(3.0, 0.5), u_shaderMode); 
+                vec2 waveFreq = mix(vec2(1.5, 1.5), vec2(3.0, 0.5), u_shaderMode);
 
                 // --- FLUID BACKGROUND ---
-                // Use waveFreq to scale UVs before noise
-                float n1 = snoise(uv * waveFreq + vec2(time * 0.5, time * 0.2)); 
-                float n2 = snoise(uv * waveFreq - vec2(time * 0.2, time * 0.5) + n1);
-                vec2 distortedUV = uv + vec2(n1, n2) * waveAmp;
+                // Use palm-influenced UV and waveFreq to scale UVs before noise
+                float n1 = snoise(palmUV * waveFreq + vec2(time * 0.5, time * 0.2));
+                float n2 = snoise(palmUV * waveFreq - vec2(time * 0.2, time * 0.5) + n1);
+                vec2 distortedUV = palmUV + vec2(n1, n2) * waveAmp;
                 
                 float mix1 = snoise(distortedUV * 1.0 + time * 0.3);
                 float mix2 = snoise(distortedUV * 2.0 - time * 0.2);
@@ -405,9 +470,14 @@ void main() {
 
                     // Subtle wave animation for image - Reduced distortion
                     float imgDistortStr = mix(0.015, 0.04, u_shaderMode); // More image distortion in extreme mode
+
+                    // Palm creates distortion on image (reduced from 5.0 to 2.0)
+                    vec2 imagePalmInfluence = palmInfluence * 2.0;
+
+                    // Image uses palm-influenced UV coordinates
                     float imgWaveX = snoise(vUv * 3.0 + time * 0.5) * imgDistortStr;
                     float imgWaveY = snoise(vUv * 3.0 - time * 0.4) * imgDistortStr;
-                    vec2 waveUV = vUv + vec2(imgWaveX, imgWaveY);
+                    vec2 waveUV = vUv + vec2(imgWaveX, imgWaveY) + imagePalmInfluence;
 
                     vec4 img0, img1;
 
@@ -484,6 +554,10 @@ void main() {
             motionBlur: gl.getUniformLocation(program, 'u_motionBlur'),
             blurIntensity: gl.getUniformLocation(program, 'u_blurIntensity'),
             shaderMode: gl.getUniformLocation(program, 'u_shaderMode'),
+            palmPosition: gl.getUniformLocation(program, 'u_palmPosition'),
+            palmVelocity: gl.getUniformLocation(program, 'u_palmVelocity'),
+            palmActive: gl.getUniformLocation(program, 'u_palmActive'),
+            palmDirection: gl.getUniformLocation(program, 'u_palmDirection'),
         };
 
         // Create Textures
@@ -540,6 +614,50 @@ void main() {
             const targetMode = props.mode === 'extreme' ? 1.0 : 0.0;
             currentModeRef.current = lerp(currentModeRef.current, targetMode, 0.005);
             gl.uniform1f(locs.shaderMode, currentModeRef.current);
+
+            // Update palm uniforms with smooth easing
+            const targetPalmPos = propsRef.current.palmPosition;
+            const targetPalmVel = propsRef.current.palmVelocity;
+
+            // Smooth interpolation (ease in/out)
+            const easeSpeed = 0.15; // Lower = smoother, higher = more responsive
+
+            if (targetPalmPos && targetPalmVel > 0.05) {
+                // Calculate direction from position change
+                const dx = targetPalmPos.x - currentPalmPosRef.current.x;
+                const dy = targetPalmPos.y - currentPalmPosRef.current.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+
+                // Update direction if there's significant movement
+                if (len > 0.001) {
+                    const targetDir = { x: dx / len, y: dy / len };
+                    currentPalmDirRef.current.x = lerp(currentPalmDirRef.current.x, targetDir.x, easeSpeed * 2.0);
+                    currentPalmDirRef.current.y = lerp(currentPalmDirRef.current.y, targetDir.y, easeSpeed * 2.0);
+                }
+
+                // Ease towards target position
+                currentPalmPosRef.current.x = lerp(currentPalmPosRef.current.x, targetPalmPos.x, easeSpeed);
+                currentPalmPosRef.current.y = lerp(currentPalmPosRef.current.y, targetPalmPos.y, easeSpeed);
+
+                // Ease towards target velocity (clamped for less intense effect)
+                const clampedVel = Math.min(targetPalmVel, 3.0); // Cap velocity at 3.0
+                currentPalmVelRef.current = lerp(currentPalmVelRef.current, clampedVel, easeSpeed);
+
+                // Fade in active state
+                currentPalmActiveRef.current = lerp(currentPalmActiveRef.current, 1.0, easeSpeed);
+            } else {
+                // Ease towards rest position
+                currentPalmPosRef.current.x = lerp(currentPalmPosRef.current.x, 0.5, easeSpeed * 0.5);
+                currentPalmPosRef.current.y = lerp(currentPalmPosRef.current.y, 0.5, easeSpeed * 0.5);
+                currentPalmVelRef.current = lerp(currentPalmVelRef.current, 0.0, easeSpeed * 2.0); // Fade out faster
+                currentPalmActiveRef.current = lerp(currentPalmActiveRef.current, 0.0, easeSpeed * 2.0);
+            }
+
+            // Send smoothed values to shader
+            gl.uniform2f(locs.palmPosition, currentPalmPosRef.current.x, currentPalmPosRef.current.y);
+            gl.uniform1f(locs.palmVelocity, currentPalmVelRef.current);
+            gl.uniform1f(locs.palmActive, currentPalmActiveRef.current);
+            gl.uniform2f(locs.palmDirection, currentPalmDirRef.current.x, currentPalmDirRef.current.y);
 
             // Ensure active video is playing (fix for pause mode)
             const activeIndex = glState.current.activeTextureIndex;

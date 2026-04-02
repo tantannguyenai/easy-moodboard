@@ -5,7 +5,11 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { WelcomeScreen } from './components/WelcomeScreen';
 
 function App() {
-  const [hasEntered, setHasEntered] = useState(false);
+  const searchParams = new URLSearchParams(window.location.search);
+  const sharedRoomId = searchParams.get('room');
+  const shareToken = searchParams.get('token');
+  const hasInviteLink = Boolean(sharedRoomId && shareToken);
+  const [hasEntered, setHasEntered] = useState(hasInviteLink);
 
   return (
     <div className="w-full h-screen">
@@ -14,7 +18,7 @@ function App() {
           {!hasEntered ? (
             <WelcomeScreen key="welcome" onEnter={() => setHasEntered(true)} />
           ) : (
-            <OrganicMoodboard key="canvas" />
+            <OrganicMoodboard key="canvas" sharedRoomId={sharedRoomId} shareToken={shareToken} />
           )}
         </AnimatePresence>
       </ErrorBoundary>

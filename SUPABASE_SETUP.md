@@ -42,3 +42,9 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 3. Restart the server (`npm run dev`) if it doesn't pick up the changes automatically.
 
 Once done, "Save to Community" will save to the cloud, and everyone with the app (connected to the same DB) will see the boards!
+
+## Multiplayer Notes (Realtime + Share Links)
+
+- Multiplayer share links use URL params: `?room=<roomId>&token=<shareToken>`.
+- Room metadata is stored in the board `data` JSON under `collab`.
+- If you enable stricter security later, turn on RLS and require auth before allowing write access.
